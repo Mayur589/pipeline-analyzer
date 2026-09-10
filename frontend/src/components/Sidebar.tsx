@@ -30,7 +30,7 @@ export const Sidebar: React.FC = () => {
               draggable
               onDragStart={(e) => handleDragStart(e, cat.id)}
               className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-grab active:cursor-grabbing transition-colors duration-150"
-              title={`Drag to canvas to add ${cat.category} node (${cat.color})`}
+              title={`Drag to canvas to add ${cat.category} node`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 {/* Unique Color Dot with subtle glow */}
@@ -48,17 +48,12 @@ export const Sidebar: React.FC = () => {
                 </span>
               </div>
 
-              {/* Color Hex & Count */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-400">
-                  {cat.color}
+              {/* Count only, no color hex code */}
+              {count > 0 && (
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">
+                  {count}
                 </span>
-                {count > 0 && (
-                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-white/5 text-slate-400">
-                    {count}
-                  </span>
-                )}
-              </div>
+              )}
             </div>
           );
         })}

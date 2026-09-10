@@ -299,8 +299,8 @@ export class GraphEngine {
   }
 
   private hitTestEdge(worldX: number, worldY: number): GraphEdge | null {
-    // Screen-space adaptive hit tolerance: at least 14 screen pixels
-    const hitTolerance = Math.max(14, 16 / Math.max(0.05, this.camera.zoom));
+    // Screen-space adaptive hit tolerance: at least 20 screen pixels
+    const hitTolerance = Math.max(20, 24 / Math.max(0.05, this.camera.zoom));
     const hitToleranceSq = hitTolerance * hitTolerance;
 
     for (let i = this.edges.length - 1; i >= 0; i--) {
@@ -331,9 +331,9 @@ export class GraphEngine {
       }
 
       // Check direct hit on midpoint or label pill
-      const labelW = Math.max(40, (edge.label?.length || 8) * 7.5);
-      const pillHalfW = (labelW / 2 + 10) / Math.max(0.5, this.camera.zoom);
-      const pillHalfH = 16 / Math.max(0.5, this.camera.zoom);
+      const labelW = Math.max(50, (edge.label?.length || 8) * 8.5);
+      const pillHalfW = labelW / 2 + 14;
+      const pillHalfH = 16;
       if (
         worldX >= midX - pillHalfW &&
         worldX <= midX + pillHalfW &&
@@ -353,13 +353,13 @@ export class GraphEngine {
       }
 
       if (isCurved) {
-        // Sample quadratic bezier curve in 12 segments for exact curved edge hit testing
+        // Sample quadratic bezier curve in 24 segments for smooth, exact curved edge hit testing
         let prevPx = x1;
         let prevPy = y1;
         let isHit = false;
 
-        for (let s = 1; s <= 12; s++) {
-          const t = s / 12;
+        for (let s = 1; s <= 24; s++) {
+          const t = s / 24;
           const oneMinusT = 1 - t;
           const px = oneMinusT * oneMinusT * x1 + 2 * oneMinusT * t * midX + t * t * x2;
           const py = oneMinusT * oneMinusT * y1 + 2 * oneMinusT * t * midY + t * t * y2;
@@ -383,15 +383,16 @@ export class GraphEngine {
         }
 
         if (isHit) return edge;
-      } else {
-        let t = ((worldX - x1) * dx + (worldY - y1) * dy) / lenSq;
-        t = Math.max(0, Math.min(1, t));
-        const projX = x1 + t * dx;
-        const projY = y1 + t * dy;
-        const distSq = (worldX - projX) * (worldX - projX) + (worldY - projY) * (worldY - projY);
-        if (distSq <= hitToleranceSq) {
-          return edge;
-        }
+      }
+
+      // Also test straight line segment
+      let t = ((worldX - x1) * dx + (worldY - y1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
+      const distSq = (worldX - projX) * (worldX - projX) + (worldY - projY) * (worldY - projY);
+      if (distSq <= hitToleranceSq) {
+        return edge;
       }
     }
     return null;
@@ -512,8 +513,8 @@ export class GraphEngine {
       if (hitEdge) {
         this.selectedEdgeId = hitEdge.id;
         this.selectedNodeId = null;
+        this.isPanning = false;
         if (this.onSelectEdge) this.onSelectEdge(hitEdge.id, e.clientX, e.clientY);
-        if (this.onSelectNode) this.onSelectNode(null, e);
       } else {
         this.isPanning = true;
         this.panStart = { x: screenX - this.camera.x, y: screenY - this.camera.y };

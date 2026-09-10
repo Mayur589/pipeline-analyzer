@@ -171,9 +171,19 @@ export const Prj1GraphCanvas: React.FC = () => {
     };
   });
 
+  const justOpenedMenuRef = useRef(false);
+
   // Dismiss menus on click outside or escape
   useEffect(() => {
-    const handleDismiss = () => {
+    const handleDismiss = (e: MouseEvent) => {
+      if (justOpenedMenuRef.current) {
+        justOpenedMenuRef.current = false;
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('.context-menu-popover') || target?.closest('.edge-menu-popover')) {
+        return;
+      }
       setContextMenu(null);
       setEdgeMenu(null);
     };
@@ -198,7 +208,7 @@ export const Prj1GraphCanvas: React.FC = () => {
         if (id) {
           callbacksRef.current.selectNode(id);
         } else {
-          callbacksRef.current.clearSelection();
+          callbacksRef.current.selectNode(null);
         }
       },
       onSelectEdge: (id, clientX, clientY) => {
@@ -206,6 +216,7 @@ export const Prj1GraphCanvas: React.FC = () => {
         setContextMenu(null);
         callbacksRef.current.selectEdge(id);
         if (id && clientX !== undefined && clientY !== undefined) {
+          justOpenedMenuRef.current = true;
           setEdgeMenu({ edgeId: id, x: clientX, y: clientY });
         } else {
           setEdgeMenu(null);
@@ -230,6 +241,7 @@ export const Prj1GraphCanvas: React.FC = () => {
       },
       onNodeContextMenu: (nodeId, clientX, clientY) => {
         if (nodeId) {
+          justOpenedMenuRef.current = true;
           callbacksRef.current.selectNode(nodeId);
           setContextMenu({
             nodeId,
@@ -384,7 +396,7 @@ export const Prj1GraphCanvas: React.FC = () => {
               left: Math.min(contextMenu.x, window.innerWidth - 220),
               top: Math.min(contextMenu.y, window.innerHeight - 190)
             }}
-            className="fixed z-50 w-52 p-1.5 rounded-xl bg-[#0F172A]/95 backdrop-blur-xl border border-white/15 shadow-2xl text-xs space-y-1 animate-fade-in select-none"
+            className="context-menu-popover fixed z-50 w-52 p-1.5 rounded-xl bg-[#0F172A]/95 backdrop-blur-xl border border-white/15 shadow-2xl text-xs space-y-1 animate-fade-in select-none"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
@@ -498,7 +510,7 @@ export const Prj1GraphCanvas: React.FC = () => {
               left: Math.max(20, Math.min(edgeMenu.x - 140, window.innerWidth - 310)),
               top: Math.max(70, Math.min(edgeMenu.y - 160, window.innerHeight - 360))
             }}
-            className="fixed z-50 w-72 p-3 rounded-2xl bg-[#0F172A]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-2xl shadow-cyan-950/40 text-xs space-y-2.5 animate-fade-in select-none"
+            className="edge-menu-popover fixed z-50 w-72 p-3 rounded-2xl bg-[#0F172A]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-2xl shadow-cyan-950/40 text-xs space-y-2.5 animate-fade-in select-none"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
@@ -645,7 +657,7 @@ export const Prj1GraphCanvas: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/5">
-                  <th className="pb-1 font-medium">Color</th>
+                  <th className="pb-1 font-medium w-8">Color</th>
                   <th className="pb-1 font-medium">Category</th>
                   <th className="pb-1 font-medium text-right">Nodes</th>
                 </tr>
@@ -667,20 +679,15 @@ export const Prj1GraphCanvas: React.FC = () => {
                       title={`Click to focus ${cat.category} nodes`}
                     >
                       <td className="py-1.5 pr-2">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="w-3 h-3 rounded-full shrink-0 shadow-sm transition-transform group-hover:scale-125"
-                            style={{
-                              backgroundColor: cat.color || '#06b6d4',
-                              boxShadow: `0 0 8px ${cat.color || '#06b6d4'}80`
-                            }}
-                          />
-                          <span className="font-mono text-[10px] text-slate-400 group-hover:text-slate-200">
-                            {cat.color}
-                          </span>
-                        </div>
+                        <span
+                          className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm transition-transform group-hover:scale-125"
+                          style={{
+                            backgroundColor: cat.color || '#06b6d4',
+                            boxShadow: `0 0 8px ${cat.color || '#06b6d4'}80`
+                          }}
+                        />
                       </td>
-                      <td className="py-1.5 text-slate-300 group-hover:text-cyan-300 truncate max-w-[130px] font-medium">
+                      <td className="py-1.5 text-slate-300 group-hover:text-cyan-300 truncate max-w-[140px] font-medium">
                         {cat.category}
                       </td>
                       <td className="py-1.5 text-right font-mono text-[10px]">
