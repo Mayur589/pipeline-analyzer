@@ -44,12 +44,12 @@ let nodesMap = new Map<string, WorkerNode>();
 let currentNodes: WorkerNode[] = [];
 let currentEdges: WorkerLink[] = [];
 let currentConfig: PhysicsConfig = {
-  repulsion: -300,
-  linkDistance: 100,
-  linkStrength: 0.5,
-  gravity: 0.05,
-  collisionRadius: 35,
-  damping: 0.4,
+  repulsion: -130,
+  linkDistance: 60,
+  linkStrength: 0.8,
+  gravity: 0.14,
+  collisionRadius: 18,
+  damping: 0.42,
   enabled: true
 };
 
@@ -60,16 +60,19 @@ self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
     if (!nodes || !edges || !config) return;
 
     currentConfig = config;
-    currentNodes = nodes.map(n => ({
-      id: n.id,
-      size: n.size || 20,
-      x: n.x ?? (Math.random() - 0.5) * 400,
-      y: n.y ?? (Math.random() - 0.5) * 400,
-      vx: n.vx ?? 0,
-      vy: n.vy ?? 0,
-      fx: n.fx ?? null,
-      fy: n.fy ?? null
-    }));
+    currentNodes = nodes.map(n => {
+      const existing = nodesMap.get(n.id);
+      return {
+        id: n.id,
+        size: n.size || 20,
+        x: existing?.x ?? n.x ?? (Math.random() - 0.5) * 200,
+        y: existing?.y ?? n.y ?? (Math.random() - 0.5) * 200,
+        vx: existing?.vx ?? n.vx ?? 0,
+        vy: existing?.vy ?? n.vy ?? 0,
+        fx: n.fx ?? existing?.fx ?? null,
+        fy: n.fy ?? existing?.fy ?? null
+      };
+    });
 
     nodesMap.clear();
     currentNodes.forEach(n => nodesMap.set(n.id, n));

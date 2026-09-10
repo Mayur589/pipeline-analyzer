@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import type { Node, Edge, NodeCategory } from '../types/graph';
 import { getProperty, propertiesToObject } from '../types/graph';
-import { ArrowRight, X } from 'lucide-react';
+import { ArrowRight, X, Link2 } from 'lucide-react';
 
 const RELATIONSHIP_PRESETS = [
   'Injects credentials into',
@@ -32,11 +32,30 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
   onDelete,
   onUpdateProperties
 }) => {
+  const { nodes, edges, addEdge, removeEdge, selectNode, nodeCategories } = useGraphStore();
+  const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<Record<string, any>>(() =>
     propertiesToObject(node.properties)
   );
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const nodeEdges = edges.filter((e) => e.sourceNodeId === node.id || e.targetNodeId === node.id);
+  const otherNodes = nodes.filter((n) => n.id !== node.id);
+
+  const handleAddConnection = async () => {
+    if (!selectedTargetId) return;
+    try {
+      await addEdge({
+        sourceNodeId: node.id,
+        targetNodeId: selectedTargetId,
+        relationship: 'relates to'
+      });
+      setSelectedTargetId('');
+    } catch (err) {
+      console.error('Failed to add connection:', err);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -184,6 +203,101 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             </div>
           );
         })}
+
+        {/* Connections Section */}
+        <div className="pt-3 border-t border-white/5 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Link2 className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Connections ({nodeEdges.length})</span>
+            </span>
+          </div>
+
+          {/* Quick Connect dropdown */}
+          {otherNodes.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <select
+                value={selectedTargetId}
+                onChange={(e) => setSelectedTargetId(e.target.value)}
+                className="flex-1 px-2.5 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500/50"
+              >
+                <option value="" className="bg-[#0B1220] text-slate-400">
+                  Connect to node...
+                </option>
+                {otherNodes.map((on) => {
+                  const onName = getProperty(on.properties, 'name') || on.id;
+                  const isConnected = nodeEdges.some(
+                    (e) =>
+                      (e.sourceNodeId === node.id && e.targetNodeId === on.id) ||
+                      (e.targetNodeId === node.id && e.sourceNodeId === on.id)
+                  );
+                  return (
+                    <option
+                      key={on.id}
+                      value={on.id}
+                      disabled={isConnected}
+                      className="bg-[#0B1220] text-slate-200"
+                    >
+                      {onName} {isConnected ? '(connected)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                onClick={handleAddConnection}
+                disabled={!selectedTargetId}
+                className="px-2.5 py-1.5 text-xs font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                Link
+              </button>
+            </div>
+          )}
+
+          {/* Existing Connections list */}
+          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+            {nodeEdges.length === 0 ? (
+              <p className="text-[11px] text-slate-500 italic">No connections</p>
+            ) : (
+              nodeEdges.map((e) => {
+                const isOutgoing = e.sourceNodeId === node.id;
+                const otherId = isOutgoing ? e.targetNodeId : e.sourceNodeId;
+                const otherNode = nodes.find((n) => n.id === otherId);
+                const otherName = otherNode
+                  ? getProperty(otherNode.properties, 'name') || otherNode.id
+                  : otherId;
+                const cat = nodeCategories.find((c) => c.id === otherNode?.categoryId);
+
+                return (
+                  <div
+                    key={e.id}
+                    className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 group text-xs transition-colors"
+                  >
+                    <button
+                      onClick={() => selectNode(otherId)}
+                      className="flex items-center gap-1.5 truncate text-left hover:text-cyan-300 transition-colors"
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ backgroundColor: cat?.color || '#06b6d4' }}
+                      />
+                      <span className="text-slate-400 text-[11px]">
+                        {isOutgoing ? '→' : '←'}
+                      </span>
+                      <span className="text-slate-300 truncate font-medium">{otherName}</span>
+                    </button>
+                    <button
+                      onClick={() => removeEdge(e.id)}
+                      title="Disconnect"
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Footer */}

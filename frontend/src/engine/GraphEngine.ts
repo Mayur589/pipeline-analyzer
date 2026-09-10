@@ -24,7 +24,10 @@ export class GraphEngine {
 
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
   private selectedNodeId: string | null = null;
+  private selectedEdgeId: string | null = null;
   private hoveredNodeId: string | null = null;
+  private connectingSourceId: string | null = null;
+  private mouseWorldPos = { x: 0, y: 0 };
   private isDraggingNode = false;
   private isPanning = false;
   private dragNodeId: string | null = null;
@@ -36,6 +39,8 @@ export class GraphEngine {
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
   private onSelectEdge?: (id: string | null) => void;
   private onHoverNode?: (id: string | null) => void;
+  private onConnectNodes?: (sourceId: string, targetId: string) => void;
+  private onConnectCancel?: () => void;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -43,6 +48,8 @@ export class GraphEngine {
       onSelectNode?: (id: string | null, e?: PointerEvent) => void;
       onSelectEdge?: (id: string | null) => void;
       onHoverNode?: (id: string | null) => void;
+      onConnectNodes?: (sourceId: string, targetId: string) => void;
+      onConnectCancel?: () => void;
     }
   ) {
     this.canvas = canvas;
@@ -50,9 +57,18 @@ export class GraphEngine {
     this.onSelectNode = options.onSelectNode;
     this.onSelectEdge = options.onSelectEdge;
     this.onHoverNode = options.onHoverNode;
+    this.onConnectNodes = options.onConnectNodes;
+    this.onConnectCancel = options.onConnectCancel;
 
     this.setupEvents();
     this.centerCamera();
+  }
+
+  public setConnectingSource(nodeId: string | null) {
+    this.connectingSourceId = nodeId;
+    if (this.canvas) {
+      this.canvas.style.cursor = nodeId ? 'crosshair' : 'grab';
+    }
   }
 
   public initWorker(worker: Worker) {
@@ -74,6 +90,19 @@ export class GraphEngine {
   }
 
   public updateData(nodes: GraphNode[], edges: GraphEdge[]) {
+    // Preserve existing simulated coordinates across data updates
+    nodes.forEach(n => {
+      const existing = this.nodesMap.get(n.id);
+      if (existing) {
+        if (n.x === undefined && existing.x !== undefined) n.x = existing.x;
+        if (n.y === undefined && existing.y !== undefined) n.y = existing.y;
+        if (n.vx === undefined && existing.vx !== undefined) n.vx = existing.vx;
+        if (n.vy === undefined && existing.vy !== undefined) n.vy = existing.vy;
+        if (n.fx === undefined && existing.fx !== undefined) n.fx = existing.fx;
+        if (n.fy === undefined && existing.fy !== undefined) n.fy = existing.fy;
+      }
+    });
+
     this.nodes = nodes;
     this.edges = edges;
     this.nodesMap.clear();
@@ -97,13 +126,17 @@ export class GraphEngine {
     filterConfig: FilterConfig,
     searchResults: Set<string>,
     selectedNodeId: string | null,
-    hoveredNodeId: string | null
+    hoveredNodeId: string | null,
+    selectedEdgeId?: string | null
   ) {
     this.displayConfig = displayConfig;
     this.filterConfig = filterConfig;
     this.searchResults = searchResults;
     this.selectedNodeId = selectedNodeId;
     this.hoveredNodeId = hoveredNodeId;
+    if (selectedEdgeId !== undefined) {
+      this.selectedEdgeId = selectedEdgeId;
+    }
   }
 
   public resize(width: number, height: number) {
@@ -174,6 +207,14 @@ export class GraphEngine {
     el.addEventListener('pointerup', this.onPointerUp.bind(this));
     el.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     el.addEventListener('dblclick', this.onDoubleClick.bind(this));
+
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this.connectingSourceId) {
+        this.connectingSourceId = null;
+        if (this.canvas) this.canvas.style.cursor = 'grab';
+        if (this.onConnectCancel) this.onConnectCancel();
+      }
+    });
   }
 
   public screenToWorld(screenX: number, screenY: number) {
@@ -237,6 +278,38 @@ export class GraphEngine {
 
     const hitNode = this.hitTest(worldPos.x, worldPos.y);
 
+    // Active connection flow (either initiated via connect button or HUD)
+    if (this.connectingSourceId) {
+      if (hitNode && hitNode.id !== this.connectingSourceId) {
+        if (this.onConnectNodes) {
+          this.onConnectNodes(this.connectingSourceId, hitNode.id);
+        }
+        this.connectingSourceId = null;
+        this.isDraggingNode = false;
+        this.dragNodeId = null;
+        this.canvas.style.cursor = 'pointer';
+        return;
+      } else {
+        // Cancel if clicked empty canvas or same node
+        this.connectingSourceId = null;
+        this.isDraggingNode = false;
+        this.dragNodeId = null;
+        this.canvas.style.cursor = 'grab';
+        if (this.onConnectCancel) this.onConnectCancel();
+        return;
+      }
+    }
+
+    // Quick Shift + Click connection shortcut from selected node
+    if (e.shiftKey && this.selectedNodeId && hitNode && hitNode.id !== this.selectedNodeId) {
+      if (this.onConnectNodes) {
+        this.onConnectNodes(this.selectedNodeId, hitNode.id);
+      }
+      this.isDraggingNode = false;
+      this.dragNodeId = null;
+      return;
+    }
+
     if (hitNode) {
       this.isDraggingNode = true;
       this.dragNodeId = hitNode.id;
@@ -268,6 +341,13 @@ export class GraphEngine {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
+    this.mouseWorldPos = worldPos;
+
+    if (this.connectingSourceId) {
+      const hitNode = this.hitTest(worldPos.x, worldPos.y);
+      this.canvas.style.cursor = hitNode && hitNode.id !== this.connectingSourceId ? 'crosshair' : 'crosshair';
+      return;
+    }
 
     if (this.isDraggingNode && this.dragNodeId) {
       const node = this.nodesMap.get(this.dragNodeId);
@@ -316,8 +396,10 @@ export class GraphEngine {
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
-    const newZoom = Math.max(0.1, Math.min(5.0, this.camera.zoom * zoomFactor));
+    // Smooth, slow, natural zoom dampening (exponential curve)
+    const zoomSensitivity = 0.0012;
+    const zoomFactor = Math.exp(-e.deltaY * zoomSensitivity);
+    const newZoom = Math.max(0.15, Math.min(4.0, this.camera.zoom * zoomFactor));
 
     const rect = this.canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -415,6 +497,56 @@ export class GraphEngine {
       );
     });
 
+    // Dynamic Connection Rubberband Preview
+    if (this.connectingSourceId) {
+      const srcNode = this.nodesMap.get(this.connectingSourceId);
+      if (srcNode) {
+        const sx = srcNode.x ?? 0;
+        const sy = srcNode.y ?? 0;
+        const hitTarget = this.hitTest(this.mouseWorldPos.x, this.mouseWorldPos.y);
+        const tx =
+          hitTarget && hitTarget.id !== this.connectingSourceId
+            ? (hitTarget.x ?? this.mouseWorldPos.x)
+            : this.mouseWorldPos.x;
+        const ty =
+          hitTarget && hitTarget.id !== this.connectingSourceId
+            ? (hitTarget.y ?? this.mouseWorldPos.y)
+            : this.mouseWorldPos.y;
+
+        this.ctx.save();
+        // Guideline dashed line
+        this.ctx.strokeStyle = '#06b6d4';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([6, 4]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(sx, sy);
+        this.ctx.lineTo(tx, ty);
+        this.ctx.stroke();
+
+        // Pulsing rings around source node
+        const pulse = Math.sin(Date.now() / 150) * 3 + 6;
+        const srcRadius = ((srcNode.size || 20) * this.displayConfig.nodeScale) + pulse;
+        this.ctx.beginPath();
+        this.ctx.arc(sx, sy, srcRadius, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([]);
+        this.ctx.stroke();
+
+        // Target hover highlight ring
+        if (hitTarget && hitTarget.id !== this.connectingSourceId) {
+          const tgtRadius = ((hitTarget.size || 20) * this.displayConfig.nodeScale) + 8;
+          this.ctx.beginPath();
+          this.ctx.arc(hitTarget.x ?? 0, hitTarget.y ?? 0, tgtRadius, 0, Math.PI * 2);
+          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.stroke();
+        }
+
+        this.ctx.restore();
+      }
+    }
+
     this.ctx.restore();
   }
 
@@ -447,13 +579,17 @@ export class GraphEngine {
     const x2 = tgt.x ?? 0;
     const y2 = tgt.y ?? 0;
 
-    this.ctx.save();
-    this.ctx.globalAlpha = isDimmed ? 0.08 : isHighlighted ? 0.9 : 0.35;
+    const isSelected = Boolean(this.selectedEdgeId && edge.id === this.selectedEdgeId);
 
-    this.ctx.strokeStyle = isHighlighted ? '#818cf8' : edge.color || '#475569';
-    this.ctx.lineWidth = isHighlighted
-      ? this.displayConfig.linkThickness * 2
-      : this.displayConfig.linkThickness;
+    this.ctx.save();
+    this.ctx.globalAlpha = isDimmed ? 0.08 : (isSelected ? 1.0 : (isHighlighted ? 0.9 : 0.35));
+
+    this.ctx.strokeStyle = isSelected
+      ? '#38bdf8'
+      : (isHighlighted ? '#818cf8' : (edge.color || '#475569'));
+    this.ctx.lineWidth = isSelected
+      ? 2.8
+      : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness);
 
     if (edge.type === 'dashed') {
       this.ctx.setLineDash([6, 6]);
@@ -490,7 +626,7 @@ export class GraphEngine {
       const arrowY = y2 - Math.sin(angle) * (tgtRadius + 6);
 
       const arrowLength = 8;
-      this.ctx.fillStyle = isHighlighted ? '#818cf8' : '#64748b';
+      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHighlighted ? '#818cf8' : '#64748b');
       this.ctx.beginPath();
       this.ctx.moveTo(arrowX, arrowY);
       this.ctx.lineTo(
@@ -503,6 +639,25 @@ export class GraphEngine {
       );
       this.ctx.closePath();
       this.ctx.fill();
+    }
+
+    // Edge Label Pill (if selected or hovered)
+    if (isSelected && edge.label) {
+      this.ctx.save();
+      this.ctx.font = '10px sans-serif';
+      const textWidth = this.ctx.measureText(edge.label).width;
+      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      this.ctx.beginPath();
+      this.ctx.roundRect(midX - textWidth / 2 - 6, midY - 9, textWidth + 12, 18, 4);
+      this.ctx.fill();
+      this.ctx.strokeStyle = '#38bdf8';
+      this.ctx.lineWidth = 1;
+      this.ctx.stroke();
+      this.ctx.fillStyle = '#f8fafc';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(edge.label, midX, midY);
+      this.ctx.restore();
     }
 
     // Animated Particles
@@ -520,7 +675,9 @@ export class GraphEngine {
 
       this.ctx.beginPath();
       this.ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-      this.ctx.fillStyle = isHighlighted ? '#a5b4fc' : 'rgba(148, 163, 184, 0.7)';
+      this.ctx.fillStyle = isSelected
+        ? '#38bdf8'
+        : (isHighlighted ? '#a5b4fc' : 'rgba(148, 163, 184, 0.7)');
       this.ctx.fill();
     }
 

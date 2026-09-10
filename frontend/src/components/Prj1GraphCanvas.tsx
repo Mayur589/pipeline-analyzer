@@ -24,12 +24,12 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
-  repulsion: -320,
-  linkDistance: 120,
-  linkStrength: 0.5,
-  gravity: 0.06,
-  collisionRadius: 30,
-  damping: 0.4,
+  repulsion: -130,
+  linkDistance: 60,
+  linkStrength: 0.8,
+  gravity: 0.14,
+  collisionRadius: 18,
+  damping: 0.42,
   enabled: true
 };
 
@@ -70,6 +70,7 @@ export const Prj1GraphCanvas: React.FC = () => {
     nodes,
     edges,
     selectedNodeId,
+    selectedEdgeId,
     selectNode,
     selectEdge,
     clearSelection,
@@ -141,41 +142,30 @@ export const Prj1GraphCanvas: React.FC = () => {
     workerRef.current = worker;
 
     const engine = new GraphEngine(canvasRef.current, {
-      onSelectNode: (id, e) => {
-        const {
-          selectNode: sNode,
-          clearSelection: cSelection,
-          addEdge: aEdge,
-          connectSourceId: cId,
-          selectedNodeId: sId
-        } = callbacksRef.current;
-
+      onSelectNode: (id) => {
+        setConnectSourceId(null);
         if (id) {
-          // Shift + click connection flow
-          if ((e?.shiftKey || cId) && (cId || sId)) {
-            const src = cId || sId;
-            if (src && src !== id) {
-              aEdge({
-                sourceNodeId: src,
-                targetNodeId: id,
-                relationship: 'relates to'
-              });
-              setConnectSourceId(null);
-              return;
-            }
-          }
-          setConnectSourceId(null);
-          sNode(id);
+          callbacksRef.current.selectNode(id);
         } else {
-          setConnectSourceId(null);
-          cSelection();
+          callbacksRef.current.clearSelection();
         }
       },
       onSelectEdge: (id) => {
         setConnectSourceId(null);
         callbacksRef.current.selectEdge(id);
       },
-      onHoverNode: (id) => setHoveredNodeId(id)
+      onHoverNode: (id) => setHoveredNodeId(id),
+      onConnectNodes: (sourceId, targetId) => {
+        callbacksRef.current.addEdge({
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          relationship: 'relates to'
+        });
+        setConnectSourceId(null);
+      },
+      onConnectCancel: () => {
+        setConnectSourceId(null);
+      }
     });
 
     engine.initWorker(worker);
@@ -225,6 +215,13 @@ export const Prj1GraphCanvas: React.FC = () => {
     }
   }, [physicsConfig]);
 
+  // Synchronize Connect Mode to Engine
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.setConnectingSource(connectSourceId);
+    }
+  }, [connectSourceId]);
+
   // Synchronize Display and Search Configs
   useEffect(() => {
     if (!engineRef.current) return;
@@ -237,9 +234,10 @@ export const Prj1GraphCanvas: React.FC = () => {
       filterConfig,
       searchResults,
       selectedNodeId,
-      hoveredNodeId
+      hoveredNodeId,
+      selectedEdgeId
     );
-  }, [graphNodes, displayConfig, filterConfig, selectedNodeId, hoveredNodeId]);
+  }, [graphNodes, displayConfig, filterConfig, selectedNodeId, hoveredNodeId, selectedEdgeId]);
 
   // Drag & Drop from left minimal sidebar
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -431,9 +429,9 @@ export const Prj1GraphCanvas: React.FC = () => {
               </div>
               <input
                 type="range"
-                min="-1000"
-                max="-50"
-                step="25"
+                min="-600"
+                max="-30"
+                step="10"
                 value={physicsConfig.repulsion}
                 onChange={(e) =>
                   setPhysicsConfig({ ...physicsConfig, repulsion: Number(e.target.value) })
@@ -449,9 +447,9 @@ export const Prj1GraphCanvas: React.FC = () => {
               </div>
               <input
                 type="range"
-                min="30"
-                max="300"
-                step="10"
+                min="20"
+                max="200"
+                step="5"
                 value={physicsConfig.linkDistance}
                 onChange={(e) =>
                   setPhysicsConfig({ ...physicsConfig, linkDistance: Number(e.target.value) })
@@ -467,8 +465,8 @@ export const Prj1GraphCanvas: React.FC = () => {
               </div>
               <input
                 type="range"
-                min="0.01"
-                max="0.3"
+                min="0.02"
+                max="0.35"
                 step="0.01"
                 value={physicsConfig.gravity}
                 onChange={(e) =>
