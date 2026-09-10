@@ -233,6 +233,33 @@ export class GraphEngine {
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
 
+    // If connection mode is active, right-clicking on or near target node completes connection!
+    if (this.connectingSourceId) {
+      const targetNode =
+        this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
+        (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
+          ? this.nodesMap.get(this.hoveredNodeId)
+          : null);
+
+      if (targetNode && targetNode.id !== this.connectingSourceId) {
+        if (this.onConnectNodes) {
+          this.onConnectNodes(this.connectingSourceId, targetNode.id);
+        }
+        this.justConnected = true;
+        this.connectingSourceId = null;
+        this.isDraggingNode = false;
+        this.dragNodeId = null;
+        this.canvas.style.cursor = 'grab';
+        return;
+      } else {
+        // Right-click on empty canvas: cancel connection
+        this.connectingSourceId = null;
+        this.canvas.style.cursor = 'grab';
+        if (this.onConnectCancel) this.onConnectCancel();
+        return;
+      }
+    }
+
     const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
     if (this.onNodeContextMenu) {
       this.onNodeContextMenu(hitNode ? hitNode.id : null, e.clientX, e.clientY);
@@ -297,15 +324,19 @@ export class GraphEngine {
     worldY: number,
     excludeId?: string | null
   ): GraphNode | null {
-    // 1. Direct hit-test with generous tolerance (radius + 16px, or label pill)
-    const directHit = this.hitTest(worldX, worldY, 16);
+    // 1. Direct hit-test with generous tolerance (radius + 20px, or label pill)
+    const directHit = this.hitTest(worldX, worldY, 20);
     if (directHit && (!excludeId || directHit.id !== excludeId)) {
       return directHit;
     }
 
-    // 2. Magnetic snap search within comfortable radius (55px in world space)
+    // 2. Magnetic snap: calculate snap distance in screen pixels so it works at any zoom level
+    const screenSnapPx = 75;
+    const worldSnapDist = Math.max(90, screenSnapPx / Math.max(0.1, this.camera.zoom));
+    const maxDistSq = worldSnapDist * worldSnapDist;
+
     let closest: GraphNode | null = null;
-    let minDistanceSq = 55 * 55;
+    let minDistanceSq = maxDistSq;
 
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const node = this.nodes[i];
@@ -332,7 +363,11 @@ export class GraphEngine {
 
     // Active connection flow (either initiated via connect button, right-click, or HUD)
     if (this.connectingSourceId) {
-      const targetNode = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+      const targetNode =
+        this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
+        (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
+          ? this.nodesMap.get(this.hoveredNodeId)
+          : null);
 
       if (targetNode && targetNode.id !== this.connectingSourceId) {
         if (this.onConnectNodes) {
@@ -450,7 +485,12 @@ export class GraphEngine {
       const screenX = e.clientX - rect.left;
       const screenY = e.clientY - rect.top;
       const worldPos = this.screenToWorld(screenX, screenY);
-      const targetNode = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+      const targetNode =
+        this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
+        (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
+          ? this.nodesMap.get(this.hoveredNodeId)
+          : null);
+
       if (targetNode && targetNode.id !== this.connectingSourceId) {
         if (this.onConnectNodes) {
           this.onConnectNodes(this.connectingSourceId, targetNode.id);

@@ -181,6 +181,9 @@ export const Prj1GraphCanvas: React.FC = () => {
         });
         setConnectSourceId(null);
         setContextMenu(null);
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'reheat' });
+        }
       },
       onConnectCancel: () => {
         setConnectSourceId(null);
@@ -355,20 +358,44 @@ export const Prj1GraphCanvas: React.FC = () => {
               <span className="font-semibold text-slate-200 truncate">{nodeName}</span>
             </div>
 
-            {/* Primary Action: Create Link */}
-            <button
-              onClick={() => {
-                setConnectSourceId(contextMenu.nodeId);
-                setContextMenu(null);
-              }}
-              className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
-                <span>Create Link</span>
-              </div>
-              <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
-            </button>
+            {/* Primary Action: Connect Here or Create Link */}
+            {connectSourceId && connectSourceId !== contextMenu.nodeId ? (
+              <button
+                onClick={() => {
+                  callbacksRef.current.addEdge({
+                    sourceNodeId: connectSourceId,
+                    targetNodeId: contextMenu.nodeId,
+                    relationship: 'relates to'
+                  });
+                  setConnectSourceId(null);
+                  setContextMenu(null);
+                  if (workerRef.current) {
+                    workerRef.current.postMessage({ type: 'reheat' });
+                  }
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all font-semibold group text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <span>Connect with {nodeName}</span>
+                </div>
+                <span className="text-[10px] text-emerald-400/90 font-mono">Finish</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setConnectSourceId(contextMenu.nodeId);
+                  setContextMenu(null);
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                  <span>Create Link</span>
+                </div>
+                <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
+              </button>
+            )}
 
             {/* Center / Focus Node */}
             <button
