@@ -34,14 +34,16 @@ export const DetailsPanel: React.FC = () => {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
-  // Local state for debounced node editing
+  // Local state for debounced node editing & save status
   const [localProps, setLocalProps] = useState<Record<string, any>>({});
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const debounceNodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync localProps when selected node changes
   useEffect(() => {
     if (selectedNode) {
       setLocalProps(propertiesToObject(selectedNode.properties));
+      setSaveStatus('saved');
     }
   }, [selectedNode?.id]);
 
@@ -53,8 +55,21 @@ export const DetailsPanel: React.FC = () => {
   useEffect(() => {
     if (selectedEdge) {
       setLocalRelationship(selectedEdge.relationship || '');
+      setSaveStatus('saved');
     }
   }, [selectedEdge?.id]);
+
+  // Handle keyboard shortcuts (Escape to deselect)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedNodeId) selectNode(null);
+        if (selectedEdgeId) selectEdge(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, selectedEdgeId, selectNode, selectEdge]);
 
   // Handle property change with debounce auto-save
   const handlePropertyChange = (key: string, value: any) => {
@@ -62,14 +77,16 @@ export const DetailsPanel: React.FC = () => {
 
     const updated = { ...localProps, [key]: value };
     setLocalProps(updated);
+    setSaveStatus('saving');
 
     if (debounceNodeTimerRef.current) {
       clearTimeout(debounceNodeTimerRef.current);
     }
 
-    debounceNodeTimerRef.current = setTimeout(() => {
-      updateNodeProperties(selectedNode.id, updated);
-    }, 200);
+    debounceNodeTimerRef.current = setTimeout(async () => {
+      await updateNodeProperties(selectedNode.id, updated);
+      setSaveStatus('saved');
+    }, 250);
   };
 
   // Handle edge relationship change with debounce auto-save
@@ -77,14 +94,16 @@ export const DetailsPanel: React.FC = () => {
     if (!selectedEdge) return;
 
     setLocalRelationship(newRel);
+    setSaveStatus('saving');
 
     if (debounceEdgeTimerRef.current) {
       clearTimeout(debounceEdgeTimerRef.current);
     }
 
-    debounceEdgeTimerRef.current = setTimeout(() => {
-      updateEdgeRelationship(selectedEdge.id, newRel);
-    }, 200);
+    debounceEdgeTimerRef.current = setTimeout(async () => {
+      await updateEdgeRelationship(selectedEdge.id, newRel);
+      setSaveStatus('saved');
+    }, 250);
   };
 
   // Cleanup timers on unmount
@@ -118,18 +137,31 @@ export const DetailsPanel: React.FC = () => {
       <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
         {/* Header */}
         <div className="p-5 border-b border-white/5 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-200">
-            Relationship
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Relationship
+            </h3>
+            {/* Auto-save status */}
+            <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                }`}
+              />
+              {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+            </span>
+          </div>
+
           <button
             onClick={() => selectEdge(null)}
+            title="Close (Esc)"
             className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Endpoints */}
+        {/* Connected Endpoints */}
         <div className="p-5 border-b border-white/5 text-xs space-y-2 text-slate-400">
           <div className="flex items-center justify-between">
             <span className="text-slate-500">From</span>
@@ -148,14 +180,14 @@ export const DetailsPanel: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
           <div className="space-y-1.5">
             <label className="block text-xs font-medium text-slate-300">
-              Relationship
+              Relationship Label
             </label>
             <input
               type="text"
               value={localRelationship}
               onChange={(e) => handleRelationshipChange(e.target.value)}
               placeholder="e.g. Injects credentials into"
-              className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-100 placeholder-slate-600 focus:outline-none focus:border-white/30 transition-all font-mono"
+              className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-100 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all font-mono"
             />
           </div>
 
@@ -206,7 +238,7 @@ export const DetailsPanel: React.FC = () => {
 
   return (
     <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
-      {/* Header with larger typography and category dot */}
+      {/* Header with larger typography and category indicator */}
       <div className="p-5 border-b border-white/5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
@@ -219,12 +251,25 @@ export const DetailsPanel: React.FC = () => {
             </span>
           </div>
 
-          <button
-            onClick={() => selectNode(null)}
-            className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Auto-save indicator */}
+            <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                }`}
+              />
+              {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+            </span>
+
+            <button
+              onClick={() => selectNode(null)}
+              title="Close (Esc)"
+              className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <h3 className="text-base font-semibold text-slate-100 mt-2 truncate">
@@ -291,7 +336,7 @@ export const DetailsPanel: React.FC = () => {
                 <select
                   value={currentValue}
                   onChange={(e) => handlePropertyChange(propKey, e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 transition-all"
+                  className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all"
                 >
                   {fieldDef.options.map((opt) => (
                     <option key={opt} value={opt} className="bg-[#0B1220] text-slate-200">
@@ -313,7 +358,7 @@ export const DetailsPanel: React.FC = () => {
                 value={currentValue}
                 onChange={(e) => handlePropertyChange(propKey, e.target.value)}
                 placeholder={fieldDef?.placeholder || `Enter ${label}...`}
-                className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 transition-all"
+                className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all"
               />
             </div>
           );

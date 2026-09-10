@@ -5,7 +5,7 @@ import * as d3 from 'd3';
 import { useGraphStore } from '../store/graphStore';
 import { getProperty } from '../types/graph';
 
-// Word wrap helper for canvas labels
+// Word-wrap helper for canvas labels
 function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -37,6 +37,7 @@ export const ForceGraphEngine: React.FC = () => {
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const lastClickRef = useRef<{ nodeId: string; time: number }>({ nodeId: '', time: 0 });
 
   const {
     nodes,
@@ -73,6 +74,25 @@ export const ForceGraphEngine: React.FC = () => {
     return () => ro.disconnect();
   }, []);
 
+  // Compute Focus Mode Neighborhood: selected node + directly connected immediate neighbors
+  const neighborhood = useMemo(() => {
+    if (!selectedNodeId) return null;
+    const nodeIds = new Set<string>([selectedNodeId]);
+    const edgeIds = new Set<string>();
+
+    edges.forEach((e) => {
+      if (e.sourceNodeId === selectedNodeId) {
+        nodeIds.add(e.targetNodeId);
+        edgeIds.add(e.id);
+      } else if (e.targetNodeId === selectedNodeId) {
+        nodeIds.add(e.sourceNodeId);
+        edgeIds.add(e.id);
+      }
+    });
+
+    return { nodeIds, edgeIds };
+  }, [selectedNodeId, edges]);
+
   // Format nodes and links for react-force-graph
   const graphData = useMemo(() => {
     const formattedNodes = nodes.map((n) => {
@@ -108,30 +128,38 @@ export const ForceGraphEngine: React.FC = () => {
   // Configure custom physics forces on the d3-force simulation
   useEffect(() => {
     if (fgRef.current) {
-      // Coulomb's Law (Node Repulsion via Barnes-Hut)
-      fgRef.current.d3Force('charge')?.strength(-450).distanceMax(700);
+      // Coulomb's Law (Stronger repulsion for 30-50 nodes layout readability)
+      fgRef.current.d3Force('charge')?.strength(-650).distanceMax(950);
 
-      // Hooke's Law (Spring Attraction)
-      fgRef.current.d3Force('link')?.distance(150).strength(0.4);
+      // Hooke's Law (Generous spring distance to avoid clutter)
+      fgRef.current.d3Force('link')?.distance(190).strength(0.35);
 
       // Center Gravity
-      fgRef.current.d3Force('center')?.strength(0.04);
+      fgRef.current.d3Force('center')?.strength(0.035);
 
-      // Circle Collision Detection (Non-overlap)
+      // Circle Collision Detection (Non-overlap with comfortable padding)
       fgRef.current.d3Force(
         'collide',
-        d3.forceCollide((d: any) => (d.radius || 34) + 12).iterations(3)
+        d3.forceCollide((d: any) => (d.radius || 34) + 18).iterations(3)
       );
     }
   }, []);
 
-  // Custom node painting callback
+  // Custom node painting callback with Focus Mode (Neighborhood View)
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D) => {
       const isSelected = node.id === selectedNodeId;
       const isConnectSource = node.id === connectSourceId;
 
-      // 1. Solid circular node body
+      // Focus Mode Opacity: In focus mode, fade unrelated nodes to ~18% opacity
+      if (neighborhood) {
+        const isHighlighted = neighborhood.nodeIds.has(node.id);
+        ctx.globalAlpha = isHighlighted ? 1.0 : 0.18;
+      } else {
+        ctx.globalAlpha = 1.0;
+      }
+
+      // 1. Solid circular node body (color contained strictly inside)
       ctx.beginPath();
       ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
       ctx.fillStyle = node.color || '#06b6d4';
@@ -146,7 +174,7 @@ export const ForceGraphEngine: React.FC = () => {
       ctx.lineWidth = isSelected || isConnectSource ? 2 : 1;
       ctx.stroke();
 
-      // 3. Subtle outer ring on selection
+      // 3. Subtle white ring on selection (never a glow)
       if (isSelected || isConnectSource) {
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius + 3.5, 0, Math.PI * 2);
@@ -188,8 +216,10 @@ export const ForceGraphEngine: React.FC = () => {
         ctx.lineWidth = 1;
         ctx.stroke();
       }
+
+      ctx.globalAlpha = 1.0;
     },
-    [selectedNodeId, connectSourceId]
+    [selectedNodeId, connectSourceId, neighborhood]
   );
 
   // Custom node hit-area pointer paint
@@ -200,7 +230,7 @@ export const ForceGraphEngine: React.FC = () => {
     ctx.fill();
   }, []);
 
-  // Custom link painting callback
+  // Custom link painting callback: UNDIRECTED curves without arrowheads, Focus Mode fading
   const paintLink = useCallback(
     (link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const source = link.source;
@@ -210,6 +240,16 @@ export const ForceGraphEngine: React.FC = () => {
       }
 
       const isSelected = link.id === selectedEdgeId;
+
+      // Focus Mode Opacity: fade unrelated edges to ~6% opacity
+      if (neighborhood) {
+        const isHighlighted = neighborhood.edgeIds.has(link.id);
+        ctx.globalAlpha = isHighlighted ? 0.95 : 0.06;
+      } else if (selectedEdgeId) {
+        ctx.globalAlpha = isSelected ? 1.0 : 0.15;
+      } else {
+        ctx.globalAlpha = 1.0;
+      }
 
       // Vector from source to target
       const dx = target.x - source.x;
@@ -224,41 +264,31 @@ export const ForceGraphEngine: React.FC = () => {
       const endX = target.x - (dx / dist) * targetRadius;
       const endY = target.y - (dy / dist) * targetRadius;
 
-      // 1. Draw edge line
+      // Draw clean, smooth undirected line (no arrowheads)
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
-      ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.85)' : 'rgba(148, 163, 184, 0.25)';
-      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.strokeStyle = isSelected
+        ? 'rgba(255, 255, 255, 0.9)'
+        : neighborhood && neighborhood.edgeIds.has(link.id)
+        ? 'rgba(255, 255, 255, 0.65)'
+        : 'rgba(148, 163, 184, 0.25)';
+      ctx.lineWidth = isSelected ? 2 : 1.2;
       ctx.stroke();
 
-      // 2. Directional arrowhead
-      if (dist > sourceRadius + targetRadius + 15) {
-        const arrowLen = 6;
-        const arrowAngle = Math.PI / 7;
-        const lineAngle = Math.atan2(dy, dx);
-
-        ctx.beginPath();
-        ctx.moveTo(endX, endY);
-        ctx.lineTo(
-          endX - arrowLen * Math.cos(lineAngle - arrowAngle),
-          endY - arrowLen * Math.sin(lineAngle - arrowAngle)
-        );
-        ctx.moveTo(endX, endY);
-        ctx.lineTo(
-          endX - arrowLen * Math.cos(lineAngle + arrowAngle),
-          endY - arrowLen * Math.sin(lineAngle + arrowAngle)
-        );
-        ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.85)' : 'rgba(148, 163, 184, 0.35)';
-        ctx.lineWidth = isSelected ? 2 : 1;
-        ctx.stroke();
-      }
-
-      // 3. Zoom-based relationship label badge (smooth fade when globalScale >= 1.2)
-      if (globalScale >= 1.2 && link.relationship) {
+      // Zoom-adaptive relationship labels:
+      // Zoomed out (< 0.9): no labels.
+      // Medium zoom (0.9 to 1.3): smooth fade.
+      // Close zoom (>= 1.3): fully visible.
+      if (globalScale >= 0.9 && link.relationship) {
         const midX = (startX + endX) / 2;
         const midY = (startY + endY) / 2;
-        const alpha = Math.min(1, (globalScale - 1.2) / 0.3);
+        const zoomAlpha = Math.min(1, Math.max(0, (globalScale - 0.9) / 0.4));
+        const baseAlpha = neighborhood
+          ? neighborhood.edgeIds.has(link.id)
+            ? 1
+            : 0.1
+          : 1;
 
         ctx.save();
         ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
@@ -267,7 +297,7 @@ export const ForceGraphEngine: React.FC = () => {
         const pillHeight = 16;
         const pillWidth = textWidth + pillPaddingX * 2;
 
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = zoomAlpha * baseAlpha;
         ctx.fillStyle = isSelected ? '#151d2f' : '#0B1220';
         ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 1;
@@ -283,8 +313,10 @@ export const ForceGraphEngine: React.FC = () => {
         ctx.fillText(link.relationship, midX, midY);
         ctx.restore();
       }
+
+      ctx.globalAlpha = 1.0;
     },
-    [selectedEdgeId]
+    [selectedEdgeId, neighborhood]
   );
 
   // Background frame pre-render (draws faint dotted grid in world space)
@@ -320,7 +352,7 @@ export const ForceGraphEngine: React.FC = () => {
     [updateNodePosition]
   );
 
-  // Node Click handler (supports Shift+click or connection mode)
+  // Node Click handler (single-click selects, double-click smoothly centers viewport)
   const handleNodeClick = useCallback(
     (node: any, event: MouseEvent) => {
       if (event.shiftKey) {
@@ -350,7 +382,17 @@ export const ForceGraphEngine: React.FC = () => {
       }
 
       setConnectSourceId(null);
-      selectNode(node.id);
+
+      // Check for double-click: smoothly center viewport on node
+      const now = Date.now();
+      if (lastClickRef.current.nodeId === node.id && now - lastClickRef.current.time < 350) {
+        fgRef.current?.centerAt(node.x, node.y, 450);
+        fgRef.current?.zoom(1.4, 450);
+        lastClickRef.current = { nodeId: '', time: 0 };
+      } else {
+        lastClickRef.current = { nodeId: node.id, time: now };
+        selectNode(node.id);
+      }
     },
     [connectSourceId, addEdge, selectNode]
   );
@@ -364,7 +406,7 @@ export const ForceGraphEngine: React.FC = () => {
     [selectEdge]
   );
 
-  // Background Click handler
+  // Background Click handler (clears selection and Focus Mode)
   const handleBackgroundClick = useCallback(() => {
     setConnectSourceId(null);
     clearSelection();
@@ -471,6 +513,14 @@ export const ForceGraphEngine: React.FC = () => {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* Focus Mode active indicator pill */}
+      {selectedNodeId && (
+        <div className="absolute bottom-4 left-4 z-20 px-2.5 py-1 rounded-full bg-[#0B1220]/80 border border-white/10 text-[11px] text-slate-400 backdrop-blur-md flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>Focus Mode (Neighborhood View)</span>
         </div>
       )}
 
