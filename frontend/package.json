@@ -12,6 +12,8 @@
   "dependencies": {
     "@react-sigma/core": "^5.0.6",
     "@sigma/edge-curve": "^3.1.0",
+    "d3-force": "^3.0.0",
+    "fuse.js": "^7.5.0",
     "graphology": "^0.26.0",
     "graphology-layout-forceatlas2": "^0.10.1",
     "lucide-react": "^1.44.0",
@@ -21,6 +23,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/d3-force": "^3.0.10",
     "@types/node": "^24.13.4",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

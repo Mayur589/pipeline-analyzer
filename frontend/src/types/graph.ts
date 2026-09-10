@@ -54,6 +54,102 @@ export interface Graph {
   edges: Edge[];
 }
 
+// Engine types from prj1_graph
+export type CustomNodeType = 'document' | 'image' | 'task' | 'code' | 'entity' | 'custom';
+
+export interface TaskItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface SchemaField {
+  key: string;
+  value: string;
+  type?: 'string' | 'number' | 'badge' | 'link';
+}
+
+export interface NodeMetadata {
+  excerpt?: string;
+  wordCount?: number;
+  lastModified?: string;
+  imageUrl?: string;
+  caption?: string;
+  width?: number;
+  height?: number;
+  tasks?: TaskItem[];
+  priority?: 'low' | 'medium' | 'high';
+  dueDate?: string;
+  language?: string;
+  codeSnippet?: string;
+  schemaFields?: SchemaField[];
+  customFields?: Record<string, any>;
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: CustomNodeType;
+  tags: string[];
+  color?: string;
+  size?: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  fx?: number | null;
+  fy?: number | null;
+  metadata?: NodeMetadata;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  weight?: number;
+  type?: 'default' | 'directional' | 'dashed' | 'strong';
+  color?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
+export interface PhysicsConfig {
+  repulsion: number;
+  linkDistance: number;
+  linkStrength: number;
+  gravity: number;
+  collisionRadius: number;
+  damping: number;
+  enabled: boolean;
+}
+
+export type ColorByOption = 'type' | 'tag' | 'degree' | 'custom';
+
+export interface DisplayConfig {
+  showLabels: boolean;
+  labelSize: number;
+  linkThickness: number;
+  curvedEdges: boolean;
+  showArrows: boolean;
+  animateParticles: boolean;
+  colorBy: ColorByOption;
+  nodeScale: number;
+  dimNonNeighbors: boolean;
+  haloGlow: boolean;
+}
+
+export interface FilterConfig {
+  searchQuery: string;
+  selectedTags: string[];
+  selectedTypes: CustomNodeType[];
+  hideOrphans: boolean;
+  minConnections: number;
+}
+
 // Safely get a property from a record
 export function getProperty<T = any>(
   properties: Record<string, any> | undefined | null,

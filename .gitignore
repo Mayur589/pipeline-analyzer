@@ -1,0 +1,11 @@
+# Dependencies & build
+node_modules/
+dist/
+
+# Untracked reference folders
+prj1_graph/
+prj1_graph
+
+# Logs & OS
+*.log
+.DS_Store

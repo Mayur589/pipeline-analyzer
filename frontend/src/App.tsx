@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useGraphStore } from './store/graphStore';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { SigmaGraphEngine } from './components/SigmaGraphEngine';
+import { Prj1GraphCanvas } from './components/Prj1GraphCanvas';
 import { DetailsPanel } from './components/DetailsPanel';
 
 export const App: React.FC = () => {
@@ -24,9 +24,9 @@ export const App: React.FC = () => {
         {/* Minimal 190px Sidebar */}
         <Sidebar />
 
-        {/* Hero WebGL Sigma.js Canvas */}
+        {/* 60 FPS Canvas Graph Engine from prj1_graph */}
         <main className="flex-1 relative overflow-hidden">
-          <SigmaGraphEngine />
+          <Prj1GraphCanvas />
         </main>
 
         {/* Floating 300px Inspector */}
