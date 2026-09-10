@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import type { Node, Edge, NodeCategory } from '../types/graph';
 import { getProperty, propertiesToObject } from '../types/graph';
-import { ArrowRight, X, Link2 } from 'lucide-react';
+import { ArrowRight, X, Link2, Edit2 } from 'lucide-react';
 
 const RELATIONSHIP_PRESETS = [
   'Injects credentials into',
@@ -32,7 +32,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
   onDelete,
   onUpdateProperties
 }) => {
-  const { nodes, edges, addEdge, removeEdge, selectNode, nodeCategories } = useGraphStore();
+  const { nodes, edges, addEdge, removeEdge, selectNode, selectEdge, nodeCategories } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<Record<string, any>>(() =>
     propertiesToObject(node.properties)
@@ -270,28 +270,44 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                 return (
                   <div
                     key={e.id}
-                    className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 group text-xs transition-colors"
+                    className="p-2 rounded-lg bg-white/[0.02] border border-white/5 hover:border-white/10 group text-xs transition-colors space-y-1.5"
                   >
-                    <button
-                      onClick={() => selectNode(otherId)}
-                      className="flex items-center gap-1.5 truncate text-left hover:text-cyan-300 transition-colors"
-                    >
-                      <span
-                        className="w-1.5 h-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: cat?.color || '#06b6d4' }}
-                      />
-                      <span className="text-slate-400 text-[11px]">
-                        {isOutgoing ? '→' : '←'}
-                      </span>
-                      <span className="text-slate-300 truncate font-medium">{otherName}</span>
-                    </button>
-                    <button
-                      onClick={() => removeEdge(e.id)}
-                      title="Disconnect"
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => selectNode(otherId)}
+                        className="flex items-center gap-1.5 truncate text-left hover:text-cyan-300 transition-colors max-w-[210px]"
+                        title={`Focus node ${otherName}`}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: cat?.color || '#06b6d4' }}
+                        />
+                        <span className="text-slate-400 text-[11px]">
+                          {isOutgoing ? '→' : '←'}
+                        </span>
+                        <span className="text-slate-300 truncate font-medium">{otherName}</span>
+                      </button>
+                      <button
+                        onClick={() => removeEdge(e.id)}
+                        title="Disconnect"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {/* Relationship badge & rename connection trigger */}
+                    <div className="flex items-center justify-between pl-4">
+                      <button
+                        onClick={() => selectEdge(e.id)}
+                        className="flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all truncate max-w-[210px]"
+                        title="Click to rename connection"
+                      >
+                        <span className="truncate">{e.relationship || 'relates to'}</span>
+                        <Edit2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                      </button>
+                      <span className="text-[10px] text-slate-500">Edit</span>
+                    </div>
                   </div>
                 );
               })
@@ -354,6 +370,15 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
     }, 250);
   };
 
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      await onUpdateRelationship(edge.id, localRelationship);
+      setSaveStatus('saved');
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
   const sourceName = sourceNode
     ? getProperty(sourceNode.properties, 'name') || sourceNode.id
     : edge.sourceNodeId;
@@ -409,6 +434,7 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
             type="text"
             value={localRelationship}
             onChange={(e) => handleRelationshipChange(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="e.g. Injects credentials into"
             className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-100 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all font-mono"
           />

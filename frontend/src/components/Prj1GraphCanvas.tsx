@@ -25,12 +25,12 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
-  repulsion: -130,
-  linkDistance: 60,
-  linkStrength: 0.8,
-  gravity: 0.14,
-  collisionRadius: 18,
-  damping: 0.42,
+  repulsion: -380,
+  linkDistance: 170,
+  linkStrength: 0.7,
+  gravity: 0.10,
+  collisionRadius: 28,
+  damping: 0.45,
   enabled: true
 };
 
@@ -86,18 +86,30 @@ export const Prj1GraphCanvas: React.FC = () => {
     nodeCategories
   } = useGraphStore();
 
-  // Convert PipelineGuard entities to GraphNode and GraphEdge
+  // Convert PipelineGuard entities to GraphNode and GraphEdge with degree-based sizing
   const { graphNodes, graphEdges } = useMemo(() => {
+    // Calculate connection count (degree) for each node
+    const degreeMap = new Map<string, number>();
+    edges.forEach((e) => {
+      degreeMap.set(e.sourceNodeId, (degreeMap.get(e.sourceNodeId) || 0) + 1);
+      degreeMap.set(e.targetNodeId, (degreeMap.get(e.targetNodeId) || 0) + 1);
+    });
+
     const gNodes: GraphNode[] = nodes.map((n) => {
       const cat = nodeCategories.find((c) => c.id === n.categoryId);
       const name = getProperty(n.properties, 'name') || n.id;
+      const degree = degreeMap.get(n.id) || 0;
+      // Dynamic node size based on number of connections (degree):
+      // Base size 18px for isolated nodes, expanding up to 48px for central hub nodes
+      const dynamicSize = Math.min(48, Math.max(18, 18 + degree * 5));
+
       return {
         id: n.id,
         label: name,
         type: 'document',
         tags: [cat?.category || 'General'],
         color: cat?.color || '#06b6d4',
-        size: Math.max(16, Math.min(26, 12 + name.length * 0.4)),
+        size: dynamicSize,
         x: n.position?.x,
         y: n.position?.y,
         metadata: {

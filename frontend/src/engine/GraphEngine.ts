@@ -26,6 +26,7 @@ export class GraphEngine {
   private selectedNodeId: string | null = null;
   private selectedEdgeId: string | null = null;
   private hoveredNodeId: string | null = null;
+  private hoveredEdgeId: string | null = null;
   private connectingSourceId: string | null = null;
   private mouseWorldPos = { x: 0, y: 0 };
   private isDraggingNode = false;
@@ -298,6 +299,10 @@ export class GraphEngine {
   }
 
   private hitTestEdge(worldX: number, worldY: number): GraphEdge | null {
+    // Screen-space adaptive hit tolerance: at least 14 screen pixels
+    const hitTolerance = Math.max(14, 16 / Math.max(0.05, this.camera.zoom));
+    const hitToleranceSq = hitTolerance * hitTolerance;
+
     for (let i = this.edges.length - 1; i >= 0; i--) {
       const edge = this.edges[i];
       const srcId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source;
@@ -316,14 +321,77 @@ export class GraphEngine {
       const lenSq = dx * dx + dy * dy;
       if (lenSq === 0) continue;
 
-      let t = ((worldX - x1) * dx + (worldY - y1) * dy) / lenSq;
-      t = Math.max(0, Math.min(1, t));
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
-      const distSq = (worldX - projX) * (worldX - projX) + (worldY - projY) * (worldY - projY);
+      let midX = (x1 + x2) / 2;
+      let midY = (y1 + y2) / 2;
+      const isCurved = Boolean(this.displayConfig?.curvedEdges);
 
-      if (distSq < 64) {
+      if (isCurved) {
+        midX = (x1 + x2) / 2 - dy * 0.15;
+        midY = (y1 + y2) / 2 + dx * 0.15;
+      }
+
+      // Check direct hit on midpoint or label pill
+      const labelW = Math.max(40, (edge.label?.length || 8) * 7.5);
+      const pillHalfW = (labelW / 2 + 10) / Math.max(0.5, this.camera.zoom);
+      const pillHalfH = 16 / Math.max(0.5, this.camera.zoom);
+      if (
+        worldX >= midX - pillHalfW &&
+        worldX <= midX + pillHalfW &&
+        worldY >= midY - pillHalfH &&
+        worldY <= midY + pillHalfH
+      ) {
         return edge;
+      }
+
+      // Bounding box quick check
+      const minX = Math.min(x1, x2, midX) - hitTolerance;
+      const maxX = Math.max(x1, x2, midX) + hitTolerance;
+      const minY = Math.min(y1, y2, midY) - hitTolerance;
+      const maxY = Math.max(y1, y2, midY) + hitTolerance;
+      if (worldX < minX || worldX > maxX || worldY < minY || worldY > maxY) {
+        continue;
+      }
+
+      if (isCurved) {
+        // Sample quadratic bezier curve in 12 segments for exact curved edge hit testing
+        let prevPx = x1;
+        let prevPy = y1;
+        let isHit = false;
+
+        for (let s = 1; s <= 12; s++) {
+          const t = s / 12;
+          const oneMinusT = 1 - t;
+          const px = oneMinusT * oneMinusT * x1 + 2 * oneMinusT * t * midX + t * t * x2;
+          const py = oneMinusT * oneMinusT * y1 + 2 * oneMinusT * t * midY + t * t * y2;
+
+          const segDx = px - prevPx;
+          const segDy = py - prevPy;
+          const segLenSq = segDx * segDx + segDy * segDy;
+          if (segLenSq > 0) {
+            let segT = ((worldX - prevPx) * segDx + (worldY - prevPy) * segDy) / segLenSq;
+            segT = Math.max(0, Math.min(1, segT));
+            const projX = prevPx + segT * segDx;
+            const projY = prevPy + segT * segDy;
+            const dSq = (worldX - projX) * (worldX - projX) + (worldY - projY) * (worldY - projY);
+            if (dSq <= hitToleranceSq) {
+              isHit = true;
+              break;
+            }
+          }
+          prevPx = px;
+          prevPy = py;
+        }
+
+        if (isHit) return edge;
+      } else {
+        let t = ((worldX - x1) * dx + (worldY - y1) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+        const distSq = (worldX - projX) * (worldX - projX) + (worldY - projY) * (worldY - projY);
+        if (distSq <= hitToleranceSq) {
+          return edge;
+        }
       }
     }
     return null;
@@ -442,7 +510,10 @@ export class GraphEngine {
     } else {
       const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
       if (hitEdge) {
+        this.selectedEdgeId = hitEdge.id;
+        this.selectedNodeId = null;
         if (this.onSelectEdge) this.onSelectEdge(hitEdge.id);
+        if (this.onSelectNode) this.onSelectNode(null, e);
       } else {
         this.isPanning = true;
         this.panStart = { x: screenX - this.camera.x, y: screenY - this.camera.y };
@@ -498,11 +569,21 @@ export class GraphEngine {
       this.camera.x = screenX - this.panStart.x;
       this.camera.y = screenY - this.panStart.y;
     } else {
-      // Hover detection
+      // Hover detection for both nodes and edges
       const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
-      this.canvas.style.cursor = hitNode ? 'pointer' : 'grab';
-      if (this.onHoverNode) {
-        this.onHoverNode(hitNode ? hitNode.id : null);
+      if (hitNode) {
+        this.hoveredEdgeId = null;
+        this.canvas.style.cursor = 'pointer';
+        if (this.onHoverNode) {
+          this.onHoverNode(hitNode.id);
+        }
+      } else {
+        const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
+        this.hoveredEdgeId = hitEdge ? hitEdge.id : null;
+        this.canvas.style.cursor = hitEdge ? 'pointer' : 'grab';
+        if (this.onHoverNode) {
+          this.onHoverNode(null);
+        }
       }
     }
   }
@@ -767,16 +848,17 @@ export class GraphEngine {
     const y2 = tgt.y ?? 0;
 
     const isSelected = Boolean(this.selectedEdgeId && edge.id === this.selectedEdgeId);
+    const isHovered = Boolean(this.hoveredEdgeId && edge.id === this.hoveredEdgeId);
 
     this.ctx.save();
-    this.ctx.globalAlpha = isDimmed ? 0.2 : (isSelected ? 1.0 : (isHighlighted ? 0.95 : 0.7));
+    this.ctx.globalAlpha = isDimmed ? 0.2 : (isSelected || isHovered ? 1.0 : (isHighlighted ? 0.95 : 0.7));
 
     this.ctx.strokeStyle = isSelected
       ? '#38bdf8'
-      : (isHighlighted ? '#818cf8' : (edge.color || '#94a3b8'));
+      : (isHovered ? '#67e8f9' : (isHighlighted ? '#818cf8' : (edge.color || '#94a3b8')));
     this.ctx.lineWidth = isSelected
-      ? 2.8
-      : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness * 1.5);
+      ? 3.2
+      : (isHovered ? 2.6 : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness * 1.5));
 
     if (edge.type === 'dashed') {
       this.ctx.setLineDash([6, 6]);
@@ -813,7 +895,7 @@ export class GraphEngine {
       const arrowY = y2 - Math.sin(angle) * (tgtRadius + 6);
 
       const arrowLength = 8;
-      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHighlighted ? '#818cf8' : '#64748b');
+      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : (isHighlighted ? '#818cf8' : '#64748b'));
       this.ctx.beginPath();
       this.ctx.moveTo(arrowX, arrowY);
       this.ctx.lineTo(
@@ -828,19 +910,22 @@ export class GraphEngine {
       this.ctx.fill();
     }
 
-    // Edge Label Pill (if selected or hovered)
-    if (isSelected && edge.label) {
+    // Edge Label Pill (if selected, hovered, or showLabels enabled at reasonable zoom)
+    const shouldShowLabel = isSelected || isHovered || (this.displayConfig.showLabels && this.camera.zoom >= 0.85);
+    if (shouldShowLabel && edge.label) {
       this.ctx.save();
-      this.ctx.font = '10px sans-serif';
+      this.ctx.font = isSelected || isHovered ? 'bold 11px sans-serif' : '10px sans-serif';
       const textWidth = this.ctx.measureText(edge.label).width;
-      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      this.ctx.fillStyle = isSelected
+        ? 'rgba(8, 47, 73, 0.95)'
+        : (isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)');
       this.ctx.beginPath();
-      this.ctx.roundRect(midX - textWidth / 2 - 6, midY - 9, textWidth + 12, 18, 4);
+      this.ctx.roundRect(midX - textWidth / 2 - 8, midY - 11, textWidth + 16, 22, 6);
       this.ctx.fill();
-      this.ctx.strokeStyle = '#38bdf8';
-      this.ctx.lineWidth = 1;
+      this.ctx.strokeStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : 'rgba(148, 163, 184, 0.4)');
+      this.ctx.lineWidth = isSelected ? 2 : (isHovered ? 1.5 : 1);
       this.ctx.stroke();
-      this.ctx.fillStyle = '#f8fafc';
+      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : '#cbd5e1');
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillText(edge.label, midX, midY);

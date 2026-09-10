@@ -44,12 +44,12 @@ let nodesMap = new Map<string, WorkerNode>();
 let currentNodes: WorkerNode[] = [];
 let currentEdges: WorkerLink[] = [];
 let currentConfig: PhysicsConfig = {
-  repulsion: -130,
-  linkDistance: 60,
-  linkStrength: 0.8,
-  gravity: 0.14,
-  collisionRadius: 18,
-  damping: 0.42,
+  repulsion: -380,
+  linkDistance: 170,
+  linkStrength: 0.7,
+  gravity: 0.10,
+  collisionRadius: 28,
+  damping: 0.45,
   enabled: true
 };
 
