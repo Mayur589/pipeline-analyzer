@@ -1,16 +1,19 @@
-import React, { useCallback, useRef, useMemo } from 'react';
+import React, { useCallback, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   useReactFlow,
   ReactFlowProvider,
-  BackgroundVariant
+  BackgroundVariant,
+  useNodesState,
+  useEdgesState
 } from '@xyflow/react';
 import type {
   Connection,
   Edge as FlowEdge,
-  Node as FlowNode
+  Node as FlowNode,
+  NodeChange
 } from '@xyflow/react';
 import { useGraphStore } from '../store/graphStore';
 import { CustomNode } from './CustomNode';
@@ -27,6 +30,7 @@ const edgeTypes = {
 const CanvasInner: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
+  const isDraggingRef = useRef(false);
 
   const {
     nodes,
@@ -42,33 +46,64 @@ const CanvasInner: React.FC = () => {
     nodeCategories
   } = useGraphStore();
 
-  // Convert store nodes to React Flow nodes
-  const flowNodes: FlowNode[] = useMemo(() => {
-    return nodes.map((node) => ({
-      id: node.id,
-      type: 'pipelineNode',
-      position: node.position || { x: 300, y: 300 },
-      data: {
-        categoryId: node.categoryId,
-        properties: node.properties
-      },
-      selected: node.id === selectedNodeId
-    }));
-  }, [nodes, selectedNodeId]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<FlowNode>([]);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<FlowEdge>([]);
 
-  // Convert store edges to React Flow edges
-  const flowEdges: FlowEdge[] = useMemo(() => {
-    return edges.map((edge) => ({
-      id: edge.id,
-      source: edge.sourceNodeId,
-      target: edge.targetNodeId,
-      type: 'pipelineEdge',
-      data: {
-        relationship: edge.relationship
-      },
-      selected: edge.id === selectedEdgeId
-    }));
-  }, [edges, selectedEdgeId]);
+  // Synchronize store nodes into local React Flow state
+  useEffect(() => {
+    // If a node is currently being dragged, don't interrupt the live drag
+    if (isDraggingRef.current) return;
+
+    setFlowNodes(
+      nodes.map((node) => ({
+        id: node.id,
+        type: 'pipelineNode',
+        position: node.position || { x: 300, y: 300 },
+        data: {
+          categoryId: node.categoryId,
+          properties: node.properties
+        },
+        selected: node.id === selectedNodeId
+      }))
+    );
+  }, [nodes, selectedNodeId, setFlowNodes]);
+
+  // Synchronize store edges into local React Flow state
+  useEffect(() => {
+    setFlowEdges(
+      edges.map((edge) => ({
+        id: edge.id,
+        source: edge.sourceNodeId,
+        target: edge.targetNodeId,
+        type: 'pipelineEdge',
+        data: {
+          relationship: edge.relationship
+        },
+        selected: edge.id === selectedEdgeId
+      }))
+    );
+  }, [edges, selectedEdgeId, setFlowEdges]);
+
+  // Live node dragging handler
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<FlowNode>[]) => {
+      onNodesChange(changes);
+    },
+    [onNodesChange]
+  );
+
+  const onNodeDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+  }, []);
+
+  // When drag ends, persist final position without delayed snapping
+  const onNodeDragStop = useCallback(
+    (_event: any, node: FlowNode) => {
+      isDraggingRef.current = false;
+      updateNodePosition(node.id, node.position);
+    },
+    [updateNodePosition]
+  );
 
   // Drag over canvas
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -85,8 +120,8 @@ const CanvasInner: React.FC = () => {
       if (!categoryId) return;
 
       const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY
+        x: event.clientX - 42,
+        y: event.clientY - 42
       });
 
       const category = nodeCategories.find((c) => c.id === categoryId);
@@ -140,14 +175,6 @@ const CanvasInner: React.FC = () => {
     [addEdge]
   );
 
-  // Drag stop -> persist node coordinate
-  const onNodeDragStop = useCallback(
-    (_event: any, node: FlowNode) => {
-      updateNodePosition(node.id, node.position);
-    },
-    [updateNodePosition]
-  );
-
   // Node click -> select node
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: FlowNode) => {
@@ -176,10 +203,13 @@ const CanvasInner: React.FC = () => {
         edges={flowEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        onNodesChange={handleNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         onDragOver={onDragOver}
         onDrop={onDrop}
         onConnect={onConnect}
-        onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}

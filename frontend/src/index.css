@@ -58,38 +58,28 @@ body {
 
 .react-flow__controls-button:hover {
   background: #1e293b !important;
-  fill: #06b6d4 !important;
-  color: #06b6d4 !important;
-}
-
-.react-flow__minimap {
-  background-color: #0b1120 !important;
-  border: 1px solid #1e293b !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
-  overflow: hidden;
+  fill: #38bdf8 !important;
+  color: #38bdf8 !important;
 }
 
 .react-flow__edge-path {
-  stroke-width: 2 !important;
+  stroke-width: 1.5 !important;
 }
 
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke: #06b6d4 !important;
-  stroke-width: 2.5 !important;
-  filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.6));
-}
-
+/* Connection Handles: small, consistent, neutral dots sitting cleanly on circumference */
 .react-flow__handle {
-  width: 10px !important;
-  height: 10px !important;
+  width: 7px !important;
+  height: 7px !important;
+  min-width: 7px !important;
+  min-height: 7px !important;
   border-radius: 50% !important;
-  background-color: #0f172a !important;
-  border: 2px solid #06b6d4 !important;
+  background-color: #94a3b8 !important;
+  border: 1.5px solid #070a13 !important;
   transition: transform 0.15s ease, background-color 0.15s ease;
+  z-index: 10;
 }
 
 .react-flow__handle:hover {
-  transform: scale(1.3);
-  background-color: #06b6d4 !important;
+  transform: scale(1.4);
+  background-color: #ffffff !important;
 }

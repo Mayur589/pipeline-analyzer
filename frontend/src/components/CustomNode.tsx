@@ -21,81 +21,50 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
   return (
     <div
       onClick={handleClick}
-      className="group relative flex flex-col items-center justify-center cursor-pointer select-none"
+      className="relative flex items-center justify-center cursor-pointer select-none"
+      style={{ width: 84, height: 84 }}
     >
-      {/* Invisible/subtle connection handles */}
+      {/* 4 Connectors: Top, Right, Bottom, Left - Equidistant and exactly on circumference */}
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !top-[-4px]"
         id="target-top"
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !left-[-4px]"
-        id="target-left"
-      />
-
-      {/* Obsidian Node Dot */}
-      <div className="relative flex items-center justify-center">
-        {/* Selection / Hover Halo */}
-        <div
-          className={`absolute rounded-full transition-all duration-300 ${
-            selected
-              ? 'w-7 h-7 opacity-80 animate-pulse-subtle'
-              : 'w-4 h-4 opacity-0 group-hover:w-6 group-hover:h-6 group-hover:opacity-40'
-          }`}
-          style={{
-            backgroundColor: color,
-            filter: 'blur(3px)'
-          }}
-        />
-
-        {/* Core Node Circle */}
-        <div
-          className={`relative rounded-full transition-all duration-200 ${
-            selected
-              ? 'w-4 h-4 ring-2 ring-white ring-offset-2 ring-offset-[#070a13] scale-110 shadow-lg'
-              : 'w-3.5 h-3.5 group-hover:scale-125 shadow-md'
-          }`}
-          style={{
-            backgroundColor: color,
-            boxShadow: selected
-              ? `0 0 16px ${color}, 0 0 4px ${color}`
-              : `0 0 8px ${color}88`
-          }}
-        />
-      </div>
-
-      {/* Node Name Label */}
-      <div className="mt-1.5 px-1.5 py-0.5 max-w-[140px] text-center pointer-events-none">
-        <span
-          className={`text-[11px] font-medium tracking-tight block truncate transition-colors duration-150 ${
-            selected
-              ? 'text-white font-semibold'
-              : 'text-slate-300 group-hover:text-white'
-          }`}
-          style={{
-            textShadow: '0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0,0,0,0.8)'
-          }}
-        >
-          {name}
-        </span>
-      </div>
-
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !bottom-[-4px]"
-        id="source-bottom"
+        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
       />
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !right-[-4px]"
         id="source-right"
+        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
       />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="source-bottom"
+        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+      />
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="target-left"
+        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+      />
+
+      {/* Circular Node Body: Fill strictly contained inside, no outer glow/overflow */}
+      <div
+        className={`w-full h-full rounded-full flex items-center justify-center text-center p-2.5 transition-all duration-150 overflow-hidden ${
+          selected
+            ? 'border-2 border-white ring-2 ring-white/30'
+            : 'border border-white/20 hover:border-white/60'
+        }`}
+        style={{
+          backgroundColor: color
+        }}
+      >
+        <span className="text-[11px] font-semibold text-white tracking-tight leading-tight line-clamp-3 select-none break-words drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          {name}
+        </span>
+      </div>
     </div>
   );
 });
