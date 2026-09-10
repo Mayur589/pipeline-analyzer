@@ -3,7 +3,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   useReactFlow,
   ReactFlowProvider,
   BackgroundVariant
@@ -16,7 +15,6 @@ import type {
 import { useGraphStore } from '../store/graphStore';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
-import { Shield, PlusCircle } from 'lucide-react';
 
 const nodeTypes = {
   pipelineNode: CustomNode
@@ -34,10 +32,13 @@ const CanvasInner: React.FC = () => {
     nodes,
     edges,
     selectedNodeId,
+    selectedEdgeId,
     selectNode,
+    selectEdge,
+    clearSelection,
     updateNodePosition,
-    openNodeDialog,
-    openEdgeDialog,
+    addNode,
+    addEdge,
     nodeCategories
   } = useGraphStore();
 
@@ -46,7 +47,7 @@ const CanvasInner: React.FC = () => {
     return nodes.map((node) => ({
       id: node.id,
       type: 'pipelineNode',
-      position: node.position || { x: 250, y: 200 },
+      position: node.position || { x: 300, y: 300 },
       data: {
         categoryId: node.categoryId,
         properties: node.properties
@@ -64,54 +65,82 @@ const CanvasInner: React.FC = () => {
       type: 'pipelineEdge',
       data: {
         relationship: edge.relationship
-      }
+      },
+      selected: edge.id === selectedEdgeId
     }));
-  }, [edges]);
+  }, [edges, selectedEdgeId]);
 
-  // Handle Drag Over
+  // Drag over canvas
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  // Handle Drop onto Canvas
+  // Drop onto canvas -> IMMEDIATELY create node, select it, NO popup!
   const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    async (event: React.DragEvent) => {
       event.preventDefault();
 
       const categoryId = event.dataTransfer.getData('application/pipelineguard-node');
       if (!categoryId) return;
 
-      // Project screen coordinates to React Flow coordinates
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY
       });
 
-      // Open node configuration dialog instead of immediately creating node
-      openNodeDialog({
+      const category = nodeCategories.find((c) => c.id === categoryId);
+
+      // Generate default properties automatically
+      const defaultProperties: Record<string, any> = {};
+      if (category) {
+        category.defaultProperties.forEach((propKey) => {
+          const fieldDef = category.fieldDefs?.find((f) => f.key === propKey);
+          if (fieldDef?.defaultValue !== undefined) {
+            defaultProperties[propKey] = fieldDef.defaultValue;
+          } else if (propKey === 'name') {
+            defaultProperties[propKey] = category.category;
+          } else if (
+            propKey.toLowerCase().includes('protection') ||
+            propKey.toLowerCase().includes('enabled') ||
+            propKey.toLowerCase().includes('required') ||
+            propKey.toLowerCase().includes('scanning') ||
+            propKey.toLowerCase().includes('ephemeral') ||
+            propKey.toLowerCase().includes('zerotrust') ||
+            propKey.toLowerCase().includes('immutable')
+          ) {
+            defaultProperties[propKey] = true;
+          } else {
+            defaultProperties[propKey] = '';
+          }
+        });
+      }
+
+      // Immediately insert node through mock API and select it
+      await addNode({
         categoryId,
+        properties: defaultProperties,
         position
       });
     },
-    [screenToFlowPosition, openNodeDialog]
+    [screenToFlowPosition, nodeCategories, addNode]
   );
 
-  // Handle connecting two nodes
+  // Connecting handles -> IMMEDIATELY create edge, select it, NO popup!
   const onConnect = useCallback(
-    (connection: Connection) => {
+    async (connection: Connection) => {
       if (connection.source && connection.target && connection.source !== connection.target) {
-        // Open edge relationship dialog
-        openEdgeDialog({
+        await addEdge({
           sourceNodeId: connection.source,
-          targetNodeId: connection.target
+          targetNodeId: connection.target,
+          relationship: 'relates to'
         });
       }
     },
-    [openEdgeDialog]
+    [addEdge]
   );
 
-  // Handle node drag stop to persist new coordinate
+  // Drag stop -> persist node coordinate
   const onNodeDragStop = useCallback(
     (_event: any, node: FlowNode) => {
       updateNodePosition(node.id, node.position);
@@ -119,7 +148,7 @@ const CanvasInner: React.FC = () => {
     [updateNodePosition]
   );
 
-  // Handle node click
+  // Node click -> select node
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: FlowNode) => {
       selectNode(node.id);
@@ -127,10 +156,18 @@ const CanvasInner: React.FC = () => {
     [selectNode]
   );
 
-  // Handle canvas pane click to deselect
+  // Edge click -> select edge
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: FlowEdge) => {
+      selectEdge(edge.id);
+    },
+    [selectEdge]
+  );
+
+  // Canvas pane click -> clear selection
   const onPaneClick = useCallback(() => {
-    selectNode(null);
-  }, [selectNode]);
+    clearSelection();
+  }, [clearSelection]);
 
   return (
     <div className="relative flex-1 h-full w-full bg-[#070a13]" ref={reactFlowWrapper}>
@@ -144,57 +181,39 @@ const CanvasInner: React.FC = () => {
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.3 }}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-        minZoom={0.2}
-        maxZoom={2}
+        minZoom={0.1}
+        maxZoom={3}
         proOptions={{ hideAttribution: true }}
       >
+        {/* Subtle Obsidian Dotted Background */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={24}
-          size={1.5}
-          color="#1e293b"
+          gap={28}
+          size={1}
+          color="rgba(148, 163, 184, 0.12)"
         />
 
+        {/* Minimal Controls */}
         <Controls
           showInteractive={false}
-          className="!bottom-4 !left-4"
-        />
-
-        <MiniMap
-          nodeStrokeColor="#06b6d4"
-          nodeColor={(n) => {
-            const cat = nodeCategories.find((c) => c.id === n.data?.categoryId);
-            return cat?.color || '#334155';
-          }}
-          maskColor="rgba(7, 10, 19, 0.75)"
-          className="!bottom-4 !right-4"
-          zoomable
-          pannable
+          className="!bottom-4 !left-4 opacity-70 hover:opacity-100 transition-opacity"
         />
       </ReactFlow>
 
-      {/* Empty Canvas Placeholder */}
+      {/* Minimal Empty State */}
       {nodes.length === 0 && (
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6">
-          <div className="max-w-md p-8 rounded-2xl bg-[#0b1120]/80 backdrop-blur-md border border-dashed border-slate-700/80 text-center shadow-2xl space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-cyan-400">
-              <Shield className="w-7 h-7 animate-pulse-subtle" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-100">
-                Software Supply Chain Visualizer
-              </h3>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Drag a node from the sidebar to begin building your pipeline.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-2 pt-2 text-[11px] text-cyan-400 font-mono">
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>10 categories ready for threat modeling</span>
-            </div>
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6 select-none">
+          <div className="text-center space-y-1.5 opacity-60">
+            <p className="text-sm font-medium text-slate-400">
+              Drag a node from the sidebar to begin building your pipeline.
+            </p>
+            <p className="text-xs text-slate-600 font-mono">
+              Obsidian Graph View Mode
+            </p>
           </div>
         </div>
       )}

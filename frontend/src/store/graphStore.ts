@@ -8,18 +8,8 @@ import type {
 } from '../types/graph';
 import { getNodeTypes } from '../mock-api/nodeTypes';
 import { getGraph } from '../mock-api/graph';
-import { insertNode, deleteNode } from '../mock-api/nodes';
-import { insertEdge, deleteEdge } from '../mock-api/edges';
-
-export interface PendingDropState {
-  categoryId: string;
-  position: { x: number; y: number };
-}
-
-export interface PendingConnectionState {
-  sourceNodeId: string;
-  targetNodeId: string;
-}
+import { insertNode, updateNode, deleteNode } from '../mock-api/nodes';
+import { insertEdge, updateEdge, deleteEdge } from '../mock-api/edges';
 
 interface GraphStoreState {
   // Core Graph State
@@ -27,32 +17,26 @@ interface GraphStoreState {
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
+  selectedEdgeId: string | null;
   nodeCategories: NodeCategory[];
 
-  // UI / Dialog States
+  // UI States
   isLoading: boolean;
   isSidebarCollapsed: boolean;
-  pendingDrop: PendingDropState | null;
-  isNodeDialogOpen: boolean;
-  pendingConnection: PendingConnectionState | null;
-  isEdgeDialogOpen: boolean;
 
   // Actions
   loadGraph: (projectId?: string) => Promise<void>;
   loadNodeTypes: () => Promise<void>;
   addNode: (input: Omit<CreateNodeInput, 'projectId'>) => Promise<Node>;
+  updateNodeProperties: (nodeId: string, properties: Record<string, any>) => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   addEdge: (input: Omit<CreateEdgeInput, 'projectId'>) => Promise<Edge>;
+  updateEdgeRelationship: (edgeId: string, relationship: string) => Promise<void>;
   removeEdge: (edgeId: string) => Promise<void>;
   selectNode: (nodeId: string | null) => void;
+  selectEdge: (edgeId: string | null) => void;
+  clearSelection: () => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
-
-  // Modal / UI actions
-  setPendingDrop: (drop: PendingDropState | null) => void;
-  openNodeDialog: (drop: PendingDropState) => void;
-  closeNodeDialog: () => void;
-  openEdgeDialog: (conn: PendingConnectionState) => void;
-  closeEdgeDialog: () => void;
   toggleSidebar: () => void;
   clearCanvas: () => void;
 }
@@ -62,13 +46,10 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  selectedEdgeId: null,
   nodeCategories: [],
   isLoading: false,
   isSidebarCollapsed: false,
-  pendingDrop: null,
-  isNodeDialogOpen: false,
-  pendingConnection: null,
-  isEdgeDialogOpen: false,
 
   loadNodeTypes: async () => {
     try {
@@ -96,7 +77,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   addNode: async (input) => {
-    set({ isLoading: true });
     try {
       const createdNode = await insertNode({
         ...input,
@@ -105,43 +85,50 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       set((state) => ({
         nodes: [...state.nodes, createdNode],
         selectedNodeId: createdNode.id,
-        isLoading: false,
-        pendingDrop: null,
-        isNodeDialogOpen: false
+        selectedEdgeId: null
       }));
       return createdNode;
     } catch (error) {
       console.error('Failed to insert node:', error);
-      set({ isLoading: false });
       throw error;
     }
   },
 
+  updateNodeProperties: async (nodeId: string, properties: Record<string, any>) => {
+    // Optimistic local update
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === nodeId ? { ...n, properties: { ...properties } } : n
+      )
+    }));
+
+    try {
+      await updateNode(nodeId, properties, get().projectId);
+    } catch (error) {
+      console.error('Failed to update node properties:', error);
+    }
+  },
+
   removeNode: async (nodeId: string) => {
-    set({ isLoading: true });
     try {
       await deleteNode(nodeId, get().projectId);
       set((state) => ({
         nodes: state.nodes.filter((n) => n.id !== nodeId),
         edges: state.edges.filter((e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId),
-        selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
-        isLoading: false
+        selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId
       }));
     } catch (error) {
       console.error('Failed to delete node:', error);
-      set({ isLoading: false });
     }
   },
 
   addEdge: async (input) => {
-    set({ isLoading: true });
     try {
       const createdEdge = await insertEdge({
         ...input,
         projectId: get().projectId
       });
       set((state) => {
-        // Replace existing edge if identical connection exists or append new
         const exists = state.edges.some((e) => e.id === createdEdge.id);
         const nextEdges = exists
           ? state.edges.map((e) => (e.id === createdEdge.id ? createdEdge : e))
@@ -149,16 +136,29 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
         return {
           edges: nextEdges,
-          isLoading: false,
-          pendingConnection: null,
-          isEdgeDialogOpen: false
+          selectedEdgeId: createdEdge.id,
+          selectedNodeId: null
         };
       });
       return createdEdge;
     } catch (error) {
       console.error('Failed to insert edge:', error);
-      set({ isLoading: false });
       throw error;
+    }
+  },
+
+  updateEdgeRelationship: async (edgeId: string, relationship: string) => {
+    // Optimistic local update
+    set((state) => ({
+      edges: state.edges.map((e) =>
+        e.id === edgeId ? { ...e, relationship } : e
+      )
+    }));
+
+    try {
+      await updateEdge(edgeId, relationship, get().projectId);
+    } catch (error) {
+      console.error('Failed to update edge relationship:', error);
     }
   },
 
@@ -166,7 +166,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     try {
       await deleteEdge(edgeId);
       set((state) => ({
-        edges: state.edges.filter((e) => e.id !== edgeId)
+        edges: state.edges.filter((e) => e.id !== edgeId),
+        selectedEdgeId: state.selectedEdgeId === edgeId ? null : state.selectedEdgeId
       }));
     } catch (error) {
       console.error('Failed to delete edge:', error);
@@ -174,7 +175,21 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   selectNode: (nodeId: string | null) => {
-    set({ selectedNodeId: nodeId });
+    set({
+      selectedNodeId: nodeId,
+      selectedEdgeId: nodeId ? null : get().selectedEdgeId
+    });
+  },
+
+  selectEdge: (edgeId: string | null) => {
+    set({
+      selectedEdgeId: edgeId,
+      selectedNodeId: edgeId ? null : get().selectedNodeId
+    });
+  },
+
+  clearSelection: () => {
+    set({ selectedNodeId: null, selectedEdgeId: null });
   },
 
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => {
@@ -183,11 +198,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
   },
 
-  setPendingDrop: (drop) => set({ pendingDrop: drop }),
-  openNodeDialog: (drop) => set({ pendingDrop: drop, isNodeDialogOpen: true }),
-  closeNodeDialog: () => set({ pendingDrop: null, isNodeDialogOpen: false }),
-  openEdgeDialog: (conn) => set({ pendingConnection: conn, isEdgeDialogOpen: true }),
-  closeEdgeDialog: () => set({ pendingConnection: null, isEdgeDialogOpen: false }),
   toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
-  clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null })
+  clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null })
 }));

@@ -4,8 +4,6 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { GraphCanvas } from './components/GraphCanvas';
 import { DetailsPanel } from './components/DetailsPanel';
-import { NodeDialog } from './components/NodeDialog';
-import { EdgeDialog } from './components/EdgeDialog';
 
 export const App: React.FC = () => {
   const { loadNodeTypes, loadGraph } = useGraphStore();
@@ -21,25 +19,19 @@ export const App: React.FC = () => {
       {/* Top Application Header */}
       <Header />
 
-      {/* Main 3-Panel Workspace */}
+      {/* Main 3-Panel Workspace: Minimal Sidebar, Focus Graph, Inspector Panel */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Left Sidebar (Collapsible, 10 Draggable Categories) */}
+        {/* Minimal Left Sidebar (Colored Dots + Category Names) */}
         <Sidebar />
 
-        {/* Center Canvas (React Flow with Drag & Drop, Controls, MiniMap) */}
+        {/* Center Canvas (Obsidian Graph View, Zoom-Based Labels) */}
         <main className="flex-1 relative overflow-hidden">
           <GraphCanvas />
         </main>
 
-        {/* Right Panel (Fixed ~320px, Node Details, Properties, Connected Edges) */}
+        {/* Right Inspector Panel (Single Source of Truth, No Popups) */}
         <DetailsPanel />
       </div>
-
-      {/* Dynamic Property Form Modal (Appears when category dropped on canvas) */}
-      <NodeDialog />
-
-      {/* Edge Relationship Modal (Appears when connecting two nodes) */}
-      <EdgeDialog />
     </div>
   );
 };

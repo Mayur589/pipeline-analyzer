@@ -2,11 +2,11 @@ import React from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath
+  getBezierPath,
+  useViewport
 } from '@xyflow/react';
 import type { EdgeProps } from '@xyflow/react';
 import { useGraphStore } from '../store/graphStore';
-import { X, ArrowRight } from 'lucide-react';
 
 export const CustomEdge: React.FC<EdgeProps> = ({
   id,
@@ -21,8 +21,12 @@ export const CustomEdge: React.FC<EdgeProps> = ({
   data,
   selected
 }) => {
-  const { removeEdge } = useGraphStore();
+  const { selectEdge, selectedEdgeId } = useGraphStore();
+  const { zoom } = useViewport();
   const relationship = (data?.relationship as string) || 'connects to';
+
+  const isEdgeSelected = selected || selectedEdgeId === id;
+  const isLabelVisible = zoom >= 1.2;
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -35,7 +39,7 @@ export const CustomEdge: React.FC<EdgeProps> = ({
 
   const onEdgeClick = (evt: React.MouseEvent) => {
     evt.stopPropagation();
-    removeEdge(id);
+    selectEdge(id);
   };
 
   return (
@@ -43,10 +47,12 @@ export const CustomEdge: React.FC<EdgeProps> = ({
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
+        interactionWidth={16}
         style={{
-          stroke: selected ? '#06b6d4' : '#334155',
-          strokeWidth: selected ? 2.5 : 1.8,
-          strokeDasharray: selected ? '4 2' : undefined,
+          stroke: isEdgeSelected ? '#38bdf8' : 'rgba(100, 116, 139, 0.35)',
+          strokeWidth: isEdgeSelected ? 2 : 1.2,
+          filter: isEdgeSelected ? 'drop-shadow(0 0 4px rgba(56, 189, 248, 0.7))' : undefined,
+          cursor: 'pointer',
           ...style
         }}
       />
@@ -55,28 +61,21 @@ export const CustomEdge: React.FC<EdgeProps> = ({
           style={{
             position: 'absolute',
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            pointerEvents: 'all'
+            pointerEvents: isLabelVisible ? 'all' : 'none',
+            opacity: isLabelVisible ? 1 : 0,
+            transition: 'opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
           }}
-          className="nodrag nopan group"
+          className="nodrag nopan select-none cursor-pointer"
+          onClick={onEdgeClick}
         >
           <div
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono transition-all duration-200 shadow-md ${
-              selected
-                ? 'bg-cyan-950/90 text-cyan-300 border border-cyan-500/80 shadow-cyan-500/20'
-                : 'bg-slate-900/90 text-slate-300 border border-slate-700/80 hover:border-cyan-500/50 hover:text-cyan-200'
+            className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-tight transition-all duration-200 shadow-sm ${
+              isEdgeSelected
+                ? 'bg-sky-950/90 text-sky-300 border border-sky-500/80 shadow-sky-500/20'
+                : 'bg-[#0b1120]/90 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
             }`}
           >
-            <ArrowRight className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
-            <span className="truncate max-w-[130px] font-medium tracking-tight">
-              {relationship}
-            </span>
-            <button
-              onClick={onEdgeClick}
-              title="Delete Relationship"
-              className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
-            >
-              <X className="w-2.5 h-2.5" />
-            </button>
+            {relationship}
           </div>
         </div>
       </EdgeLabelRenderer>

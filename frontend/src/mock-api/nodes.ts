@@ -8,7 +8,7 @@ function generateId(prefix: string): string {
 
 export async function insertNode(input: CreateNodeInput): Promise<Node> {
   // Simulate network roundtrip
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 60));
 
   const projectGraph = getOrCreateProjectGraph(input.projectId);
 
@@ -27,9 +27,28 @@ export async function insertNode(input: CreateNodeInput): Promise<Node> {
   return newNode;
 }
 
+export async function updateNode(
+  nodeId: string,
+  properties: Record<string, any> | Map<string, any>,
+  projectId: string = 'default-pipeline'
+): Promise<Node> {
+  // Simulate network roundtrip
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  const projectGraph = getOrCreateProjectGraph(projectId);
+  const targetNode = projectGraph.nodes.find((n) => n.id === nodeId);
+
+  if (!targetNode) {
+    throw new Error(`Node with id ${nodeId} not found`);
+  }
+
+  targetNode.properties = properties;
+  return targetNode;
+}
+
 export async function deleteNode(nodeId: string, _projectId: string = 'default-pipeline'): Promise<void> {
   // Simulate network roundtrip
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  await new Promise((resolve) => setTimeout(resolve, 60));
 
   // Search across projects
   for (const pid of Object.keys(mockDb.graphs)) {

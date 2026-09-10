@@ -2,12 +2,10 @@ import React, { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { useGraphStore } from '../store/graphStore';
-import { CategoryIcon } from './CategoryIcon';
-import { getProperty, propertiesToObject } from '../types/graph';
-import { Trash2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { getProperty } from '../types/graph';
 
 export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
-  const { nodeCategories, removeNode, selectNode } = useGraphStore();
+  const { nodeCategories, selectNode } = useGraphStore();
   const categoryId = (data?.categoryId as string) || '';
   const properties = data?.properties as any;
 
@@ -15,151 +13,87 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
   const color = category?.color || '#06b6d4';
   const name = getProperty(properties, 'name') || id;
 
-  const propsObj = propertiesToObject(properties);
-  const nonNameProps = Object.entries(propsObj).filter(([k]) => k !== 'name');
-
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    removeNode(id);
+    selectNode(id);
   };
 
   return (
     <div
-      onClick={() => selectNode(id)}
-      className={`group relative rounded-xl bg-[#0b1120]/95 backdrop-blur-md border transition-all duration-200 min-w-[240px] max-w-[280px] shadow-lg ${
-        selected
-          ? 'border-cyan-400 ring-2 ring-cyan-500/30 shadow-cyan-500/20 shadow-xl'
-          : 'border-slate-850 hover:border-slate-700 hover:shadow-slate-900/50'
-      }`}
-      style={{
-        boxShadow: selected ? `0 0 20px ${color}33` : undefined
-      }}
+      onClick={handleClick}
+      className="group relative flex flex-col items-center justify-center cursor-pointer select-none"
     >
-      {/* Target Handle (Top) */}
+      {/* Invisible/subtle connection handles */}
       <Handle
         type="target"
         position={Position.Top}
-        className="!top-[-5px] !bg-[#0b1120] !border-cyan-400 !w-3 !h-3 transition-transform"
+        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !top-[-4px]"
         id="target-top"
       />
-      {/* Target Handle (Left) */}
       <Handle
         type="target"
         position={Position.Left}
-        className="!left-[-5px] !bg-[#0b1120] !border-cyan-400 !w-2.5 !h-2.5 transition-transform"
+        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !left-[-4px]"
         id="target-left"
       />
 
-      {/* Card Header */}
-      <div
-        className="flex items-center justify-between p-3 border-b border-slate-800/80 rounded-t-xl"
-        style={{
-          background: `linear-gradient(to right, ${color}12, transparent)`
-        }}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border"
-            style={{
-              backgroundColor: `${color}18`,
-              borderColor: `${color}40`,
-              color: color
-            }}
-          >
-            <CategoryIcon iconName={category?.iconName} className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0">
-            <span
-              className="text-[10px] font-semibold uppercase tracking-wider block truncate"
-              style={{ color }}
-            >
-              {category?.category || 'Supply Chain Node'}
-            </span>
-            <span className="text-[10px] font-mono text-slate-500 block truncate">
-              {id.split('_').slice(0, 2).join('_')}
-            </span>
-          </div>
-        </div>
+      {/* Obsidian Node Dot */}
+      <div className="relative flex items-center justify-center">
+        {/* Selection / Hover Halo */}
+        <div
+          className={`absolute rounded-full transition-all duration-300 ${
+            selected
+              ? 'w-7 h-7 opacity-80 animate-pulse-subtle'
+              : 'w-4 h-4 opacity-0 group-hover:w-6 group-hover:h-6 group-hover:opacity-40'
+          }`}
+          style={{
+            backgroundColor: color,
+            filter: 'blur(3px)'
+          }}
+        />
 
-        {/* Delete button */}
-        <button
-          onClick={handleDelete}
-          title="Delete Node"
-          className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+        {/* Core Node Circle */}
+        <div
+          className={`relative rounded-full transition-all duration-200 ${
+            selected
+              ? 'w-4 h-4 ring-2 ring-white ring-offset-2 ring-offset-[#070a13] scale-110 shadow-lg'
+              : 'w-3.5 h-3.5 group-hover:scale-125 shadow-md'
+          }`}
+          style={{
+            backgroundColor: color,
+            boxShadow: selected
+              ? `0 0 16px ${color}, 0 0 4px ${color}`
+              : `0 0 8px ${color}88`
+          }}
+        />
+      </div>
+
+      {/* Node Name Label */}
+      <div className="mt-1.5 px-1.5 py-0.5 max-w-[140px] text-center pointer-events-none">
+        <span
+          className={`text-[11px] font-medium tracking-tight block truncate transition-colors duration-150 ${
+            selected
+              ? 'text-white font-semibold'
+              : 'text-slate-300 group-hover:text-white'
+          }`}
+          style={{
+            textShadow: '0 1px 4px rgba(0, 0, 0, 0.9), 0 0 10px rgba(0,0,0,0.8)'
+          }}
         >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+          {name}
+        </span>
       </div>
 
-      {/* Card Body */}
-      <div className="p-3 space-y-2">
-        {/* Node Name */}
-        <div>
-          <div className="text-xs font-semibold text-slate-100 truncate flex items-center gap-1.5">
-            <span>{name}</span>
-          </div>
-        </div>
-
-        {/* Dynamic Property Chips */}
-        {nonNameProps.length > 0 && (
-          <div className="space-y-1 pt-1 border-t border-slate-800/60">
-            {nonNameProps.slice(0, 3).map(([key, val]) => {
-              const isBool = typeof val === 'boolean';
-              return (
-                <div
-                  key={key}
-                  className="flex items-center justify-between text-[10px] py-0.5"
-                >
-                  <span className="text-slate-400 font-mono capitalize truncate mr-2">
-                    {key.replace(/([A-Z])/g, ' $1')}:
-                  </span>
-                  {isBool ? (
-                    <span
-                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono ${
-                        val
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                      }`}
-                    >
-                      {val ? (
-                        <>
-                          <ShieldCheck className="w-2.5 h-2.5" /> Enforced
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-2.5 h-2.5" /> Disabled
-                        </>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="text-slate-300 font-mono truncate max-w-[120px] bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-800">
-                      {String(val)}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-            {nonNameProps.length > 3 && (
-              <div className="text-[9px] text-slate-500 text-right pt-0.5 font-mono">
-                +{nonNameProps.length - 3} more properties
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Source Handle (Bottom) */}
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!bottom-[-5px] !bg-[#0b1120] !border-cyan-400 !w-3 !h-3 transition-transform"
+        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !bottom-[-4px]"
         id="source-bottom"
       />
-      {/* Source Handle (Right) */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!right-[-5px] !bg-[#0b1120] !border-cyan-400 !w-2.5 !h-2.5 transition-transform"
+        className="!w-2 !h-2 !bg-slate-400 !border-none opacity-0 group-hover:opacity-70 transition-opacity !right-[-4px]"
         id="source-right"
       />
     </div>

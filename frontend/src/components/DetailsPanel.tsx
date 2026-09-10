@@ -1,304 +1,356 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
-import { CategoryIcon } from './CategoryIcon';
 import { getProperty, propertiesToObject } from '../types/graph';
-import {
-  X,
-  Trash2,
-  Layers,
-  ArrowDownRight,
-  ArrowUpRight,
-  ShieldCheck,
-  AlertCircle,
-  HelpCircle,
-  Hash,
-  Activity,
-  GitCommit
-} from 'lucide-react';
+import { Trash2, ArrowRight, Link2, Check, X } from 'lucide-react';
+
+const RELATIONSHIP_PRESETS = [
+  'Injects credentials into',
+  'Triggers build in',
+  'Pulls dependency into',
+  'Publishes artifact to',
+  'Deploys container to',
+  'Monitors telemetry from',
+  'Enforces branch policy on',
+  'Signs artifact with',
+  'Authenticates via OIDC',
+  'relates to'
+];
 
 export const DetailsPanel: React.FC = () => {
   const {
     nodes,
     edges,
     selectedNodeId,
+    selectedEdgeId,
     selectNode,
+    selectEdge,
     removeNode,
     removeEdge,
+    updateNodeProperties,
+    updateEdgeRelationship,
     nodeCategories
   } = useGraphStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
 
-  // If no node selected, show a helpful summary card
-  if (!selectedNode) {
+  // Local state for debounced node editing
+  const [localProps, setLocalProps] = useState<Record<string, any>>({});
+  const debounceNodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync localProps when selected node changes
+  useEffect(() => {
+    if (selectedNode) {
+      setLocalProps(propertiesToObject(selectedNode.properties));
+    }
+  }, [selectedNode?.id]);
+
+  // Local state for debounced edge editing
+  const [localRelationship, setLocalRelationship] = useState<string>('');
+  const debounceEdgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync localRelationship when selected edge changes
+  useEffect(() => {
+    if (selectedEdge) {
+      setLocalRelationship(selectedEdge.relationship || '');
+    }
+  }, [selectedEdge?.id]);
+
+  // Handle property change with debounce auto-save
+  const handlePropertyChange = (key: string, value: any) => {
+    if (!selectedNode) return;
+
+    const updated = { ...localProps, [key]: value };
+    setLocalProps(updated);
+
+    if (debounceNodeTimerRef.current) {
+      clearTimeout(debounceNodeTimerRef.current);
+    }
+
+    debounceNodeTimerRef.current = setTimeout(() => {
+      updateNodeProperties(selectedNode.id, updated);
+    }, 250);
+  };
+
+  // Handle edge relationship change with debounce auto-save
+  const handleRelationshipChange = (newRel: string) => {
+    if (!selectedEdge) return;
+
+    setLocalRelationship(newRel);
+
+    if (debounceEdgeTimerRef.current) {
+      clearTimeout(debounceEdgeTimerRef.current);
+    }
+
+    debounceEdgeTimerRef.current = setTimeout(() => {
+      updateEdgeRelationship(selectedEdge.id, newRel);
+    }, 250);
+  };
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceNodeTimerRef.current) clearTimeout(debounceNodeTimerRef.current);
+      if (debounceEdgeTimerRef.current) clearTimeout(debounceEdgeTimerRef.current);
+    };
+  }, []);
+
+  // 1. When nothing is selected
+  if (!selectedNode && !selectedEdge) {
     return (
-      <aside className="w-[320px] shrink-0 bg-[#0b1120] border-l border-slate-800/80 flex flex-col justify-between p-4 select-none z-20">
-        <div>
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-800 text-slate-200">
-            <Activity className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Pipeline Inspector
-            </h3>
-          </div>
+      <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col justify-center items-center p-6 text-center select-none z-20">
+        <p className="text-xs text-slate-500 leading-relaxed max-w-[220px]">
+          Select a node or edge to view its details.
+        </p>
+      </aside>
+    );
+  }
 
-          <div className="mt-8 text-center px-4">
-            <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500 mb-3 shadow-inner">
-              <Layers className="w-6 h-6 text-slate-500" />
-            </div>
-            <h4 className="text-xs font-semibold text-slate-300">No Component Selected</h4>
-            <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-              Click on any supply chain node or drop a new one onto the canvas to inspect its security posture and connections.
-            </p>
-          </div>
+  // 2. When an edge is selected
+  if (selectedEdge) {
+    const sourceNode = nodes.find((n) => n.id === selectedEdge.sourceNodeId);
+    const targetNode = nodes.find((n) => n.id === selectedEdge.targetNodeId);
 
-          {/* Quick Metrics */}
-          <div className="mt-8 space-y-2">
-            <span className="text-[10px] font-mono uppercase text-slate-500 block px-1">
-              Active Graph Metrics
+    const sourceName = sourceNode ? getProperty(sourceNode.properties, 'name') || sourceNode.id : selectedEdge.sourceNodeId;
+    const targetName = targetNode ? getProperty(targetNode.properties, 'name') || targetNode.id : selectedEdge.targetNodeId;
+
+    return (
+      <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col h-full z-20 select-none">
+        {/* Header */}
+        <div className="p-4 border-b border-slate-900 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-sky-400" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Edge Relationship
             </span>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Total Nodes</span>
-                <span className="text-lg font-bold font-mono text-cyan-400">{nodes.length}</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-400 block">Relationships</span>
-                <span className="text-lg font-bold font-mono text-emerald-400">{edges.length}</span>
-              </div>
+          </div>
+          <button
+            onClick={() => selectEdge(null)}
+            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Connected Endpoints (Read-Only) */}
+        <div className="p-4 border-b border-slate-900/80 bg-slate-950/40 text-xs space-y-2">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-mono text-slate-500">Source</span>
+            <span className="text-slate-200 font-medium truncate max-w-[160px]">{sourceName}</span>
+          </div>
+          <div className="flex items-center justify-center text-slate-600">
+            <ArrowRight className="w-3.5 h-3.5 text-sky-400" />
+          </div>
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-mono text-slate-500">Target</span>
+            <span className="text-slate-200 font-medium truncate max-w-[160px]">{targetName}</span>
+          </div>
+        </div>
+
+        {/* Editable Relationship Field */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-200">
+              Relationship Label
+            </label>
+            <input
+              type="text"
+              value={localRelationship}
+              onChange={(e) => handleRelationshipChange(e.target.value)}
+              placeholder="e.g. Injects credentials into"
+              className="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-all font-mono"
+            />
+            <span className="text-[10px] text-slate-500 block">
+              Auto-saves on edit. Appears on canvas when zoom ≥ 1.2.
+            </span>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="space-y-1.5 pt-2">
+            <span className="text-[11px] font-medium text-slate-400 block">
+              Presets
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {RELATIONSHIP_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => handleRelationshipChange(preset)}
+                  className={`text-[10px] px-2 py-1 rounded border transition-colors font-mono text-left ${
+                    localRelationship === preset
+                      ? 'bg-sky-500/20 border-sky-500/80 text-sky-300'
+                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-500 flex items-start gap-2">
-          <HelpCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-          <span>Connect nodes by dragging from node edge handles (top/bottom/left/right).</span>
+        {/* Actions Footer */}
+        <div className="p-4 border-t border-slate-900 bg-slate-950/40">
+          <button
+            onClick={() => removeEdge(selectedEdge.id)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Edge</span>
+          </button>
         </div>
       </aside>
     );
   }
 
+  // 3. When a node is selected (selectedNode is defined)
+  if (!selectedNode) {
+    return null;
+  }
+
   const category = nodeCategories.find((c) => c.id === selectedNode.categoryId);
   const color = category?.color || '#06b6d4';
-  const name = getProperty(selectedNode.properties, 'name') || selectedNode.id;
-  const propsObj = propertiesToObject(selectedNode.properties);
-
-  // Outgoing and Incoming edges
-  const outgoingEdges = edges.filter((e) => e.sourceNodeId === selectedNode.id);
-  const incomingEdges = edges.filter((e) => e.targetNodeId === selectedNode.id);
 
   return (
-    <aside className="w-[320px] shrink-0 bg-[#0b1120] border-l border-slate-800/80 flex flex-col h-full z-20 select-none">
-      {/* Header */}
-      <div
-        className="p-4 border-b border-slate-800"
-        style={{
-          background: `linear-gradient(to bottom, ${color}12, transparent)`
-        }}
-      >
+    <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col h-full z-20 select-none">
+      {/* Header with Category (Read-Only) */}
+      <div className="p-4 border-b border-slate-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center border shrink-0"
+              className="w-3 h-3 rounded-full"
               style={{
-                backgroundColor: `${color}20`,
-                borderColor: `${color}40`,
-                color: color
+                backgroundColor: color,
+                boxShadow: `0 0 8px ${color}88`
               }}
-            >
-              <CategoryIcon iconName={category?.iconName} className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <span
-                className="text-[10px] font-mono uppercase tracking-wider font-bold block truncate"
-                style={{ color }}
-              >
-                {category?.category || 'Supply Chain Node'}
-              </span>
-              <h3 className="text-sm font-bold text-slate-100 truncate">{name}</h3>
-            </div>
+            />
+            <span className="text-xs font-semibold text-slate-100 uppercase tracking-wider">
+              {category?.category || 'Node Inspector'}
+            </span>
           </div>
 
           <button
             onClick={() => selectNode(null)}
-            title="Deselect"
-            className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="mt-3 flex items-center justify-between text-[10px] font-mono text-slate-500 pt-2 border-t border-slate-800/80">
-          <span className="flex items-center gap-1 truncate">
-            <Hash className="w-3 h-3 text-slate-500" />
-            {selectedNode.id}
-          </span>
-          <button
-            onClick={() => removeNode(selectedNode.id)}
-            className="flex items-center gap-1 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-1.5 py-0.5 rounded transition-colors"
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete
-          </button>
+        <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-slate-500">
+          <span>Category (read-only)</span>
+          <span className="truncate max-w-[120px]">{selectedNode.id}</span>
         </div>
       </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar">
-        {/* Dynamic Properties Section */}
-        <div>
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-            <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <GitCommit className="w-3.5 h-3.5 text-cyan-400" />
-              Dynamic Properties
-            </span>
-            <span className="text-[10px] font-mono text-slate-500">
-              {Object.keys(propsObj).length} configured
-            </span>
-          </div>
+      {/* Scrollable Dynamic Properties Form */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        <div className="flex items-center justify-between pb-1 border-b border-slate-900">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            Properties
+          </span>
+          <span className="text-[10px] font-mono text-emerald-500 flex items-center gap-1">
+            <Check className="w-2.5 h-2.5" /> Auto-saved
+          </span>
+        </div>
 
-          <div className="space-y-2">
-            {Object.entries(propsObj).map(([key, value]) => {
-              const isBool = typeof value === 'boolean';
-              const fieldDef = category?.fieldDefs?.find((f) => f.key === key);
-              const label = fieldDef?.label || key.replace(/([A-Z])/g, ' $1');
+        {/* Dynamic inputs from category defaultProperties */}
+        {category?.defaultProperties.map((propKey) => {
+          const fieldDef = category.fieldDefs?.find((f) => f.key === propKey);
+          const label = fieldDef?.label || propKey.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
+          const type = fieldDef?.type || (
+            propKey.toLowerCase().includes('protection') ||
+            propKey.toLowerCase().includes('enabled') ||
+            propKey.toLowerCase().includes('required') ||
+            propKey.toLowerCase().includes('scanning') ||
+            propKey.toLowerCase().includes('ephemeral') ||
+            propKey.toLowerCase().includes('zerotrust') ||
+            propKey.toLowerCase().includes('immutable')
+              ? 'checkbox'
+              : 'text'
+          );
 
-              return (
-                <div
-                  key={key}
-                  className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800/90 space-y-1"
-                >
-                  <span className="text-[10px] font-mono text-slate-400 block capitalize">
+          const currentValue = localProps[propKey] !== undefined ? localProps[propKey] : '';
+
+          if (type === 'checkbox') {
+            const isChecked = !!currentValue;
+            return (
+              <label
+                key={propKey}
+                className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition-colors group"
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={(e) => handlePropertyChange(propKey, e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-sky-500 bg-slate-950 border-slate-700 focus:ring-sky-500/40 accent-sky-500 transition-all cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-medium text-slate-200 group-hover:text-white block">
                     {label}
                   </span>
-                  {isBool ? (
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded ${
-                          value
-                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                            : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                        }`}
-                      >
-                        {value ? (
-                          <>
-                            <ShieldCheck className="w-3 h-3" /> Enabled / Enforced
-                          </>
-                        ) : (
-                          <>
-                            <AlertCircle className="w-3 h-3" /> Disabled / Unenforced
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-slate-200 font-mono font-medium break-all block">
-                      {String(value) || '<empty>'}
+                  {fieldDef?.description && (
+                    <span className="text-[10px] text-slate-500 block mt-0.5 leading-relaxed">
+                      {fieldDef.description}
                     </span>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </label>
+            );
+          }
 
-        {/* Connected Edges Section */}
-        <div>
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-            <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              Connected Edges
-            </span>
-            <span className="text-[10px] font-mono text-slate-500">
-              {incomingEdges.length + outgoingEdges.length} total
-            </span>
-          </div>
+          if (type === 'select' && fieldDef?.options) {
+            return (
+              <div key={propKey} className="space-y-1">
+                <label className="block text-[11px] font-medium text-slate-300">
+                  {label}
+                </label>
+                <select
+                  value={currentValue}
+                  onChange={(e) => handlePropertyChange(propKey, e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-200 focus:outline-none focus:border-sky-500 transition-all"
+                >
+                  {fieldDef.options.map((opt) => (
+                    <option key={opt} value={opt} className="bg-slate-900 text-slate-200">
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          }
 
-          <div className="space-y-3">
-            {/* Outgoing relationships */}
-            <div>
-              <span className="text-[10px] font-mono uppercase text-slate-400 flex items-center gap-1 mb-1.5">
-                <ArrowDownRight className="w-3 h-3 text-cyan-400" />
-                Outgoing ({outgoingEdges.length})
-              </span>
-              {outgoingEdges.length === 0 ? (
-                <span className="text-[11px] text-slate-600 italic block px-1">
-                  No downstream targets
-                </span>
-              ) : (
-                <div className="space-y-1.5">
-                  {outgoingEdges.map((e) => {
-                    const target = nodes.find((n) => n.id === e.targetNodeId);
-                    const targetName = target ? getProperty(target.properties, 'name') || target.id : e.targetNodeId;
-                    return (
-                      <div
-                        key={e.id}
-                        className="flex items-center justify-between p-2 rounded-md bg-slate-900/60 border border-slate-800 text-xs"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <span className="text-[10px] text-cyan-400 font-mono block truncate">
-                            {e.relationship}
-                          </span>
-                          <span className="text-slate-300 font-medium truncate block">
-                            → {targetName}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => removeEdge(e.id)}
-                          title="Remove Edge"
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+          return (
+            <div key={propKey} className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="block text-[11px] font-medium text-slate-300">
+                  {label}
+                </label>
+                {propKey === 'name' && (
+                  <span className="text-[9px] font-mono text-sky-400">Node Label</span>
+                )}
+              </div>
+              <input
+                type="text"
+                value={currentValue}
+                onChange={(e) => handlePropertyChange(propKey, e.target.value)}
+                placeholder={fieldDef?.placeholder || `Enter ${label}...`}
+                className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-200 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-all"
+              />
             </div>
+          );
+        })}
+      </div>
 
-            {/* Incoming relationships */}
-            <div>
-              <span className="text-[10px] font-mono uppercase text-slate-400 flex items-center gap-1 mb-1.5">
-                <ArrowUpRight className="w-3 h-3 text-emerald-400" />
-                Incoming ({incomingEdges.length})
-              </span>
-              {incomingEdges.length === 0 ? (
-                <span className="text-[11px] text-slate-600 italic block px-1">
-                  No upstream sources
-                </span>
-              ) : (
-                <div className="space-y-1.5">
-                  {incomingEdges.map((e) => {
-                    const source = nodes.find((n) => n.id === e.sourceNodeId);
-                    const sourceName = source ? getProperty(source.properties, 'name') || source.id : e.sourceNodeId;
-                    return (
-                      <div
-                        key={e.id}
-                        className="flex items-center justify-between p-2 rounded-md bg-slate-900/60 border border-slate-800 text-xs"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <span className="text-[10px] text-emerald-400 font-mono block truncate">
-                            {e.relationship}
-                          </span>
-                          <span className="text-slate-300 font-medium truncate block">
-                            ← {sourceName}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => removeEdge(e.id)}
-                          title="Remove Edge"
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {/* Actions Footer */}
+      <div className="p-4 border-t border-slate-900 bg-slate-950/40">
+        <button
+          onClick={() => removeNode(selectedNode.id)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Delete Node</span>
+        </button>
       </div>
     </aside>
   );
