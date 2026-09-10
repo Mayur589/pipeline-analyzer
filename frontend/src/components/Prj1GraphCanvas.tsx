@@ -20,7 +20,8 @@ import {
   X,
   Sparkles,
   Layers,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
@@ -65,6 +66,11 @@ export const Prj1GraphCanvas: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    nodeId: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const {
     nodes,
@@ -75,6 +81,7 @@ export const Prj1GraphCanvas: React.FC = () => {
     selectEdge,
     clearSelection,
     addNode,
+    removeNode,
     addEdge,
     nodeCategories
   } = useGraphStore();
@@ -117,6 +124,7 @@ export const Prj1GraphCanvas: React.FC = () => {
     selectEdge,
     clearSelection,
     addEdge,
+    removeNode,
     connectSourceId,
     selectedNodeId
   });
@@ -127,10 +135,18 @@ export const Prj1GraphCanvas: React.FC = () => {
       selectEdge,
       clearSelection,
       addEdge,
+      removeNode,
       connectSourceId,
       selectedNodeId
     };
   });
+
+  // Dismiss context menu on click outside or escape
+  useEffect(() => {
+    const handleDismiss = () => setContextMenu(null);
+    window.addEventListener('click', handleDismiss);
+    return () => window.removeEventListener('click', handleDismiss);
+  }, []);
 
   // Initialize Web Worker and GraphEngine on mount
   useEffect(() => {
@@ -144,6 +160,7 @@ export const Prj1GraphCanvas: React.FC = () => {
     const engine = new GraphEngine(canvasRef.current, {
       onSelectNode: (id) => {
         setConnectSourceId(null);
+        setContextMenu(null);
         if (id) {
           callbacksRef.current.selectNode(id);
         } else {
@@ -152,6 +169,7 @@ export const Prj1GraphCanvas: React.FC = () => {
       },
       onSelectEdge: (id) => {
         setConnectSourceId(null);
+        setContextMenu(null);
         callbacksRef.current.selectEdge(id);
       },
       onHoverNode: (id) => setHoveredNodeId(id),
@@ -162,9 +180,23 @@ export const Prj1GraphCanvas: React.FC = () => {
           relationship: 'relates to'
         });
         setConnectSourceId(null);
+        setContextMenu(null);
       },
       onConnectCancel: () => {
         setConnectSourceId(null);
+        setContextMenu(null);
+      },
+      onNodeContextMenu: (nodeId, clientX, clientY) => {
+        if (nodeId) {
+          callbacksRef.current.selectNode(nodeId);
+          setContextMenu({
+            nodeId,
+            x: clientX,
+            y: clientY
+          });
+        } else {
+          setContextMenu(null);
+        }
       }
     });
 
@@ -295,6 +327,75 @@ export const Prj1GraphCanvas: React.FC = () => {
         ref={canvasRef}
         className="w-full h-full block cursor-grab active:cursor-grabbing"
       />
+
+      {/* Node Right-Click Context Menu */}
+      {contextMenu && (() => {
+        const menuNode = nodes.find((n) => n.id === contextMenu.nodeId);
+        const cat = nodeCategories.find((c) => c.id === menuNode?.categoryId);
+        const nodeName = menuNode
+          ? getProperty(menuNode.properties, 'name') || menuNode.id
+          : 'Node';
+
+        return (
+          <div
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 220),
+              top: Math.min(contextMenu.y, window.innerHeight - 190)
+            }}
+            className="fixed z-50 w-52 p-1.5 rounded-xl bg-[#0F172A]/95 backdrop-blur-xl border border-white/15 shadow-2xl text-xs space-y-1 animate-fade-in select-none"
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            {/* Node Info Header */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-white/10 text-slate-300">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: cat?.color || '#06b6d4' }}
+              />
+              <span className="font-semibold text-slate-200 truncate">{nodeName}</span>
+            </div>
+
+            {/* Primary Action: Create Link */}
+            <button
+              onClick={() => {
+                setConnectSourceId(contextMenu.nodeId);
+                setContextMenu(null);
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                <span>Create Link</span>
+              </div>
+              <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
+            </button>
+
+            {/* Center / Focus Node */}
+            <button
+              onClick={() => {
+                engineRef.current?.centerOnNode(contextMenu.nodeId);
+                setContextMenu(null);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-slate-300 transition-colors text-left cursor-pointer"
+            >
+              <Maximize2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Center in View</span>
+            </button>
+
+            {/* Delete Node */}
+            <button
+              onClick={() => {
+                removeNode(contextMenu.nodeId);
+                setContextMenu(null);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-500/15 text-rose-400 transition-colors text-left cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Node</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Connect mode banner */}
       {connectSourceId && (

@@ -41,6 +41,7 @@ export class GraphEngine {
   private onHoverNode?: (id: string | null) => void;
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
+  private onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -50,6 +51,7 @@ export class GraphEngine {
       onHoverNode?: (id: string | null) => void;
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
+      onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
     }
   ) {
     this.canvas = canvas;
@@ -59,6 +61,7 @@ export class GraphEngine {
     this.onHoverNode = options.onHoverNode;
     this.onConnectNodes = options.onConnectNodes;
     this.onConnectCancel = options.onConnectCancel;
+    this.onNodeContextMenu = options.onNodeContextMenu;
 
     this.setupEvents();
     this.centerCamera();
@@ -207,6 +210,7 @@ export class GraphEngine {
     el.addEventListener('pointerup', this.onPointerUp.bind(this));
     el.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     el.addEventListener('dblclick', this.onDoubleClick.bind(this));
+    el.addEventListener('contextmenu', this.onContextMenu.bind(this));
 
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.connectingSourceId) {
@@ -215,6 +219,19 @@ export class GraphEngine {
         if (this.onConnectCancel) this.onConnectCancel();
       }
     });
+  }
+
+  private onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldPos = this.screenToWorld(screenX, screenY);
+
+    const hitNode = this.hitTest(worldPos.x, worldPos.y);
+    if (this.onNodeContextMenu) {
+      this.onNodeContextMenu(hitNode ? hitNode.id : null, e.clientX, e.clientY);
+    }
   }
 
   public screenToWorld(screenX: number, screenY: number) {
@@ -271,6 +288,24 @@ export class GraphEngine {
   }
 
   private onPointerDown(e: PointerEvent) {
+    // Prevent right-click from triggering node dragging or panning
+    if (e.button === 2) {
+      if (this.connectingSourceId) {
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        const worldPos = this.screenToWorld(screenX, screenY);
+        const hitNode = this.hitTest(worldPos.x, worldPos.y);
+        if (hitNode && hitNode.id !== this.connectingSourceId) {
+          if (this.onConnectNodes) {
+            this.onConnectNodes(this.connectingSourceId, hitNode.id);
+          }
+          this.connectingSourceId = null;
+        }
+      }
+      return;
+    }
+
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
