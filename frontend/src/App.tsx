@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useGraphStore } from './store/graphStore';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { GraphCanvas } from './components/GraphCanvas';
+import { ObsidianGraphEngine } from './components/ObsidianGraphEngine';
 import { DetailsPanel } from './components/DetailsPanel';
 
 export const App: React.FC = () => {
@@ -24,9 +24,9 @@ export const App: React.FC = () => {
         {/* Minimal 190px Sidebar */}
         <Sidebar />
 
-        {/* Hero Graph Canvas */}
+        {/* Hero Obsidian Physics Graph Canvas */}
         <main className="flex-1 relative overflow-hidden">
-          <GraphCanvas />
+          <ObsidianGraphEngine />
         </main>
 
         {/* Floating 300px Inspector */}
