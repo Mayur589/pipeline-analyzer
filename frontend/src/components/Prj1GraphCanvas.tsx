@@ -598,11 +598,10 @@ export const Prj1GraphCanvas: React.FC = () => {
             <button
               onClick={() => setConnectSourceId(selectedNodeId)}
               title="Connect to another node (or Shift+Click target)"
-              className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs px-2 ${
-                connectSourceId
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                  : 'text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
+              className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs px-2 ${connectSourceId
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                : 'text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
             >
               <Link2 className="w-3.5 h-3.5" />
               <span>Connect</span>
@@ -615,11 +614,10 @@ export const Prj1GraphCanvas: React.FC = () => {
         <button
           onClick={() => setIsLegendOpen(!isLegendOpen)}
           title="Toggle Color : Category Table Reference"
-          className={`p-1.5 rounded-lg transition-colors flex items-center gap-1.5 px-2 text-xs cursor-pointer ${
-            isLegendOpen
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-white/10'
-          }`}
+          className={`p-1.5 rounded-lg transition-colors flex items-center gap-1.5 px-2 text-xs cursor-pointer ${isLegendOpen
+            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+            : 'text-slate-400 hover:text-white hover:bg-white/10'
+            }`}
         >
           <Palette className="w-3.5 h-3.5 text-cyan-400" />
           <span className="font-medium">Color : Cat</span>
@@ -630,11 +628,10 @@ export const Prj1GraphCanvas: React.FC = () => {
         <button
           onClick={() => setIsSettingsOpen(!isSettingsOpen)}
           title="Obsidian Graph Engine Settings"
-          className={`p-1.5 rounded-lg transition-colors ${
-            isSettingsOpen
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-              : 'text-slate-400 hover:text-white hover:bg-white/10'
-          }`}
+          className={`p-1.5 rounded-lg transition-colors ${isSettingsOpen
+            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+            : 'text-slate-400 hover:text-white hover:bg-white/10'
+            }`}
         >
           <Sliders className="w-4 h-4" />
         </button>
