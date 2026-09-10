@@ -35,6 +35,9 @@ export class GraphEngine {
 
   private particleOffset = 0;
   private justConnected = false;
+  private rightClickSourceId: string | null = null;
+  private rightClickStartPos = { x: 0, y: 0 };
+  private isRightClickDragging = false;
 
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
@@ -228,6 +231,13 @@ export class GraphEngine {
       this.justConnected = false;
       return;
     }
+    if (this.isRightClickDragging) {
+      this.isRightClickDragging = false;
+      this.rightClickSourceId = null;
+      return;
+    }
+    this.rightClickSourceId = null;
+
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -390,8 +400,17 @@ export class GraphEngine {
       }
     }
 
-    // Prevent right-click from starting node dragging or canvas panning
+    // Handle right-click (button 2) for right-click drag to connect
     if (e.button === 2) {
+      const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
+      if (hitNode) {
+        this.rightClickSourceId = hitNode.id;
+        this.rightClickStartPos = { x: screenX, y: screenY };
+        this.isRightClickDragging = false;
+      } else {
+        this.rightClickSourceId = null;
+        this.isRightClickDragging = false;
+      }
       return;
     }
 
@@ -439,6 +458,15 @@ export class GraphEngine {
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
     this.mouseWorldPos = worldPos;
+
+    // Detect right-click drag motion from node
+    if (this.rightClickSourceId) {
+      const dist = Math.hypot(screenX - this.rightClickStartPos.x, screenY - this.rightClickStartPos.y);
+      if (dist > 4) {
+        this.isRightClickDragging = true;
+        this.connectingSourceId = this.rightClickSourceId;
+      }
+    }
 
     if (this.connectingSourceId) {
       const target = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
@@ -496,13 +524,23 @@ export class GraphEngine {
           this.onConnectNodes(this.connectingSourceId, targetNode.id);
         }
         this.justConnected = true;
-        this.connectingSourceId = null;
-        this.isDraggingNode = false;
-        this.dragNodeId = null;
-        this.canvas.style.cursor = 'grab';
-        return;
+      } else if (this.isRightClickDragging) {
+        // Suppress context menu if dragged and released outside
+        this.justConnected = true;
       }
+
+      this.connectingSourceId = null;
+      this.rightClickSourceId = null;
+      this.isRightClickDragging = false;
+      this.isDraggingNode = false;
+      this.dragNodeId = null;
+      this.canvas.style.cursor = 'grab';
+      if (this.onConnectCancel) this.onConnectCancel();
+      return;
     }
+
+    this.rightClickSourceId = null;
+    this.isRightClickDragging = false;
 
     if (this.isDraggingNode && this.dragNodeId) {
       if (this.worker) {
