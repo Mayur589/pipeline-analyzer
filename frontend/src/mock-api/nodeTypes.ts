@@ -6,10 +6,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Identity & People',
     defaultProperties: ['name', 'role', 'mfaEnabled', 'accessLevel'],
     description: 'Developers, admins, service accounts, and IAM roles accessing the pipeline.',
-    iconName: 'Users',
-    color: '#38bdf8', // Sky
-    borderAccent: 'border-sky-500/30 hover:border-sky-500/70',
-    bgAccent: 'bg-sky-500/10 text-sky-400',
+    color: '#38bdf8',
     fieldDefs: [
       { key: 'name', label: 'Name / Identifier', type: 'text', defaultValue: 'Security Engineer', placeholder: 'e.g., Core DevOps Team' },
       { key: 'role', label: 'Role / Team', type: 'select', options: ['Maintainer', 'Contributor', 'DevOps Admin', 'Service Account', 'External Auditor'], defaultValue: 'Maintainer' },
@@ -22,10 +19,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Source Control',
     defaultProperties: ['name', 'visibility', 'branchProtection'],
     description: 'Repositories, version control systems, and code review governance.',
-    iconName: 'GitBranch',
-    color: '#818cf8', // Indigo
-    borderAccent: 'border-indigo-500/30 hover:border-indigo-500/70',
-    bgAccent: 'bg-indigo-500/10 text-indigo-400',
+    color: '#818cf8',
     fieldDefs: [
       { key: 'name', label: 'Repository Name', type: 'text', defaultValue: 'org/backend-service', placeholder: 'e.g., org/auth-gateway' },
       { key: 'visibility', label: 'Visibility', type: 'select', options: ['Private', 'Internal', 'Public'], defaultValue: 'Private' },
@@ -37,10 +31,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Dependencies',
     defaultProperties: ['name', 'packageManager', 'vulnerabilityScanning'],
     description: 'Third-party open-source libraries, vendored code, and software packages.',
-    iconName: 'Package',
-    color: '#f59e0b', // Amber
-    borderAccent: 'border-amber-500/30 hover:border-amber-500/70',
-    bgAccent: 'bg-amber-500/10 text-amber-400',
+    color: '#f59e0b',
     fieldDefs: [
       { key: 'name', label: 'Dependency Set / Package', type: 'text', defaultValue: 'npm-production-deps', placeholder: 'e.g., react-dom, lodash' },
       { key: 'packageManager', label: 'Package Manager / Ecosystem', type: 'select', options: ['npm / yarn / pnpm', 'PyPI / pip', 'Go Modules', 'Maven / Gradle', 'Cargo (Rust)', 'NuGet'], defaultValue: 'npm / yarn / pnpm' },
@@ -52,10 +43,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Build Environment',
     defaultProperties: ['name', 'isolationLevel', 'ephemeral', 'baseImage'],
     description: 'Compilers, build workers, sandboxes, and base OS container images.',
-    iconName: 'Cpu',
-    color: '#ec4899', // Pink
-    borderAccent: 'border-pink-500/30 hover:border-pink-500/70',
-    bgAccent: 'bg-pink-500/10 text-pink-400',
+    color: '#ec4899',
     fieldDefs: [
       { key: 'name', label: 'Build Worker Cluster', type: 'text', defaultValue: 'Isolated-Runner-Cluster-01', placeholder: 'e.g., hermetic-builder-node' },
       { key: 'isolationLevel', label: 'Isolation Level', type: 'select', options: ['Hermetic Container', 'Firecracker MicroVM', 'Dedicated Bare-Metal', 'Shared Node'], defaultValue: 'Hermetic Container' },
@@ -68,10 +56,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'CI/CD Pipeline',
     defaultProperties: ['name', 'runnerType', 'approvalRequired'],
     description: 'Workflows, orchestration engines, automated test suites, and gates.',
-    iconName: 'Workflow',
-    color: '#06b6d4', // Cyan
-    borderAccent: 'border-cyan-500/30 hover:border-cyan-500/70',
-    bgAccent: 'bg-cyan-500/10 text-cyan-400',
+    color: '#06b6d4',
     fieldDefs: [
       { key: 'name', label: 'Pipeline Name', type: 'text', defaultValue: 'Release-Pipeline-Prod', placeholder: 'e.g., CI-Build-And-Sign' },
       { key: 'runnerType', label: 'Runner Infrastructure', type: 'select', options: ['GitHub Actions (Self-Hosted)', 'GitLab Runner (Protected)', 'Argo Workflows', 'Tekton Pipelines', 'CircleCI Cloud'], defaultValue: 'GitHub Actions (Self-Hosted)' },
@@ -83,10 +68,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Secrets & Credentials',
     defaultProperties: ['name', 'vaultType', 'autoRevoke'],
     description: 'API keys, signing certificates, deployment tokens, and KMS keys.',
-    iconName: 'Key',
-    color: '#eab308', // Yellow
-    borderAccent: 'border-yellow-500/30 hover:border-yellow-500/70',
-    bgAccent: 'bg-yellow-500/10 text-yellow-400',
+    color: '#eab308',
     fieldDefs: [
       { key: 'name', label: 'Secret Identifier / Role', type: 'text', defaultValue: 'Cosign-KMS-Signer-Key', placeholder: 'e.g., AWS-OIDC-Deployer' },
       { key: 'vaultType', label: 'Vault Provider', type: 'select', options: ['HashiCorp Vault', 'AWS KMS / Secrets Manager', 'GCP Secret Manager', 'Azure Key Vault', 'OIDC Short-Lived Token'], defaultValue: 'OIDC Short-Lived Token' },
@@ -98,10 +80,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Artifact Storage',
     defaultProperties: ['name', 'registryType', 'immutableTags', 'signatureVerification'],
     description: 'OCI container registries, binary repositories, and package archives.',
-    iconName: 'Database',
-    color: '#10b981', // Emerald
-    borderAccent: 'border-emerald-500/30 hover:border-emerald-500/70',
-    bgAccent: 'bg-emerald-500/10 text-emerald-400',
+    color: '#10b981',
     fieldDefs: [
       { key: 'name', label: 'Registry / Repository', type: 'text', defaultValue: 'registry.internal.corp/app', placeholder: 'e.g., artifact-hub/core' },
       { key: 'registryType', label: 'Registry Platform', type: 'select', options: ['Harbor OCI Registry', 'AWS ECR', 'Google Artifact Registry', 'GitHub Container Registry', 'JFrog Artifactory'], defaultValue: 'Harbor OCI Registry' },
@@ -114,10 +93,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Distribution',
     defaultProperties: ['name', 'channel', 'integrityCheck'],
     description: 'Release portals, CDN networks, package indexes, and client delivery.',
-    iconName: 'Globe',
-    color: '#a855f7', // Purple
-    borderAccent: 'border-purple-500/30 hover:border-purple-500/70',
-    bgAccent: 'bg-purple-500/10 text-purple-400',
+    color: '#a855f7',
     fieldDefs: [
       { key: 'name', label: 'Release Channel / CDN', type: 'text', defaultValue: 'Global-CloudFront-Delivery', placeholder: 'e.g., Fastly-Edge-CDN' },
       { key: 'channel', label: 'Channel Type', type: 'select', options: ['Public CDN', 'Private VPC Gateway', 'App Store / Enterprise Portal', 'Direct Binary Download'], defaultValue: 'Public CDN' },
@@ -129,10 +105,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Runtime Environment',
     defaultProperties: ['name', 'environmentType', 'enforceZeroTrust'],
     description: 'Kubernetes clusters, serverless workers, VMs, and edge instances.',
-    iconName: 'Server',
-    color: '#f97316', // Orange
-    borderAccent: 'border-orange-500/30 hover:border-orange-500/70',
-    bgAccent: 'bg-orange-500/10 text-orange-400',
+    color: '#f97316',
     fieldDefs: [
       { key: 'name', label: 'Cluster / Host Name', type: 'text', defaultValue: 'k8s-prod-us-east-1', placeholder: 'e.g., prod-eks-workload-01' },
       { key: 'environmentType', label: 'Environment Tier', type: 'select', options: ['Production', 'Staging', 'Canary', 'Sandbox / Testing'], defaultValue: 'Production' },
@@ -144,10 +117,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Monitoring & Response',
     defaultProperties: ['name', 'siemIntegration', 'alertThreshold'],
     description: 'Runtime telemetry, SIEM logging, eBPF sensors, and incident triggers.',
-    iconName: 'ShieldAlert',
-    color: '#ef4444', // Rose/Red
-    borderAccent: 'border-red-500/30 hover:border-red-500/70',
-    bgAccent: 'bg-red-500/10 text-red-400',
+    color: '#ef4444',
     fieldDefs: [
       { key: 'name', label: 'Monitoring Probe / Pipeline', type: 'text', defaultValue: 'Falco-Runtime-Guard', placeholder: 'e.g., Datadog-SIEM-Ingest' },
       { key: 'siemIntegration', label: 'SIEM / Observability Platform', type: 'select', options: ['Falco + Splunk', 'Datadog Cloud SIEM', 'Elastic Security', 'AWS Security Hub', 'Grafana Loki + Prometheus'], defaultValue: 'Falco + Splunk' },

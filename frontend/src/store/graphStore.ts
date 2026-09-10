@@ -22,7 +22,6 @@ interface GraphStoreState {
 
   // UI States
   isLoading: boolean;
-  isSidebarCollapsed: boolean;
 
   // Actions
   loadGraph: (projectId?: string) => Promise<void>;
@@ -37,7 +36,6 @@ interface GraphStoreState {
   selectEdge: (edgeId: string | null) => void;
   clearSelection: () => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
-  toggleSidebar: () => void;
   clearCanvas: () => void;
 }
 
@@ -49,7 +47,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   selectedEdgeId: null,
   nodeCategories: [],
   isLoading: false,
-  isSidebarCollapsed: false,
 
   loadNodeTypes: async () => {
     try {
@@ -198,6 +195,5 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
   },
 
-  toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
   clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null })
 }));

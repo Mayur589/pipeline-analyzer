@@ -6,7 +6,7 @@ import EdgeCurveProgram, { createDrawCurvedEdgeLabel, DEFAULT_EDGE_CURVE_PROGRAM
 import type { Settings } from 'sigma/settings';
 import type { NodeLabelDrawingFunction, NodeHoverDrawingFunction } from 'sigma/rendering';
 import { useGraphStore } from '../store/graphStore';
-import { getProperty } from '../types/graph';
+import { getProperty, createDefaultProperties } from '../types/graph';
 import { Maximize2, RefreshCw, ZoomIn, ZoomOut, Link2 } from 'lucide-react';
 
 // Convert hex color to rgba with specific alpha
@@ -571,30 +571,11 @@ export const SigmaGraphEngine: React.FC = () => {
       const graphCoords = sigmaRef.current.viewportToGraph({ x: clientX, y: clientY });
 
       const category = nodeCategories.find((c) => c.id === categoryId);
-      const defaultProperties: Record<string, any> = {};
-      if (category) {
-        category.defaultProperties.forEach((propKey) => {
-          const fieldDef = category.fieldDefs?.find((f) => f.key === propKey);
-          if (fieldDef?.defaultValue !== undefined) {
-            defaultProperties[propKey] = fieldDef.defaultValue;
-          } else if (propKey === 'name') {
-            defaultProperties[propKey] = category.category;
-          } else if (
-            propKey.toLowerCase().includes('protection') ||
-            propKey.toLowerCase().includes('enabled') ||
-            propKey.toLowerCase().includes('required') ||
-            propKey.toLowerCase().includes('scanning')
-          ) {
-            defaultProperties[propKey] = true;
-          } else {
-            defaultProperties[propKey] = `${category.category} Config`;
-          }
-        });
-      }
+      const properties = category ? createDefaultProperties(category) : {};
 
       const createdNode = await addNode({
         categoryId,
-        properties: defaultProperties,
+        properties,
         position: graphCoords
       });
 

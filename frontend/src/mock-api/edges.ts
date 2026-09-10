@@ -1,9 +1,5 @@
 import type { CreateEdgeInput, Edge } from '../types/graph';
-import { getOrCreateProjectGraph, mockDb } from './db';
-
-function generateId(prefix: string): string {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
-}
+import { getOrCreateProjectGraph, mockDb, generateId } from './db';
 
 export async function insertEdge(input: CreateEdgeInput): Promise<Edge> {
   // Simulate network roundtrip

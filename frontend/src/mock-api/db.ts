@@ -23,3 +23,8 @@ export function getOrCreateProjectGraph(projectId: string): { nodes: Node[]; edg
   }
   return mockDb.graphs[projectId];
 }
+
+export function generateId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+}
+
