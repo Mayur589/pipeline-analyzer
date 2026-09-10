@@ -112,7 +112,7 @@ export const Prj1GraphCanvas: React.FC = () => {
       target: e.targetNodeId,
       label: e.relationship,
       type: 'default',
-      color: 'rgba(148, 163, 184, 0.4)'
+      color: '#94a3b8'
     }));
 
     return { graphNodes: gNodes, graphEdges: gEdges };

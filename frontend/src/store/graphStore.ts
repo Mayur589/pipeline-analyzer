@@ -120,25 +120,44 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   addEdge: async (input) => {
+    const tempId = `edge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticEdge: Edge = {
+      id: tempId,
+      sourceNodeId: input.sourceNodeId,
+      targetNodeId: input.targetNodeId,
+      relationship: input.relationship || 'relates to'
+    };
+
+    // Immediate local update so the connection renders instantaneously with 0ms delay
+    set((state) => {
+      const exists = state.edges.some(
+        (e) =>
+          (e.sourceNodeId === input.sourceNodeId && e.targetNodeId === input.targetNodeId) ||
+          (e.sourceNodeId === input.targetNodeId && e.targetNodeId === input.sourceNodeId)
+      );
+      if (exists) return state;
+
+      return {
+        edges: [...state.edges, optimisticEdge],
+        selectedEdgeId: tempId,
+        selectedNodeId: null
+      };
+    });
+
     try {
       const createdEdge = await insertEdge({
         ...input,
         projectId: get().projectId
       });
-      set((state) => {
-        const exists = state.edges.some((e) => e.id === createdEdge.id);
-        const nextEdges = exists
-          ? state.edges.map((e) => (e.id === createdEdge.id ? createdEdge : e))
-          : [...state.edges, createdEdge];
-
-        return {
-          edges: nextEdges,
-          selectedEdgeId: createdEdge.id,
-          selectedNodeId: null
-        };
-      });
+      set((state) => ({
+        edges: state.edges.map((e) => (e.id === tempId ? createdEdge : e)),
+        selectedEdgeId: createdEdge.id
+      }));
       return createdEdge;
     } catch (error) {
+      set((state) => ({
+        edges: state.edges.filter((e) => e.id !== tempId)
+      }));
       console.error('Failed to insert edge:', error);
       throw error;
     }

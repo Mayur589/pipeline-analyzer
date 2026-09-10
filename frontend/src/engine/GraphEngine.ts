@@ -34,6 +34,7 @@ export class GraphEngine {
   private panStart = { x: 0, y: 0 };
 
   private particleOffset = 0;
+  private justConnected = false;
 
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
@@ -96,13 +97,13 @@ export class GraphEngine {
     // Preserve existing simulated coordinates across data updates
     nodes.forEach(n => {
       const existing = this.nodesMap.get(n.id);
-      if (existing) {
-        if (n.x === undefined && existing.x !== undefined) n.x = existing.x;
-        if (n.y === undefined && existing.y !== undefined) n.y = existing.y;
-        if (n.vx === undefined && existing.vx !== undefined) n.vx = existing.vx;
-        if (n.vy === undefined && existing.vy !== undefined) n.vy = existing.vy;
-        if (n.fx === undefined && existing.fx !== undefined) n.fx = existing.fx;
-        if (n.fy === undefined && existing.fy !== undefined) n.fy = existing.fy;
+      if (existing && existing.x !== undefined) {
+        n.x = existing.x;
+        n.y = existing.y;
+        n.vx = existing.vx;
+        n.vy = existing.vy;
+        n.fx = existing.fx;
+        n.fy = existing.fy;
       }
     });
 
@@ -223,12 +224,16 @@ export class GraphEngine {
 
   private onContextMenu(e: MouseEvent) {
     e.preventDefault();
+    if (this.justConnected) {
+      this.justConnected = false;
+      return;
+    }
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
 
-    const hitNode = this.hitTest(worldPos.x, worldPos.y);
+    const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
     if (this.onNodeContextMenu) {
       this.onNodeContextMenu(hitNode ? hitNode.id : null, e.clientX, e.clientY);
     }
@@ -287,45 +292,60 @@ export class GraphEngine {
     return null;
   }
 
-  private onPointerDown(e: PointerEvent) {
-    // Prevent right-click from triggering node dragging or panning
-    if (e.button === 2) {
-      if (this.connectingSourceId) {
-        const rect = this.canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-        const worldPos = this.screenToWorld(screenX, screenY);
-        const hitNode = this.hitTest(worldPos.x, worldPos.y);
-        if (hitNode && hitNode.id !== this.connectingSourceId) {
-          if (this.onConnectNodes) {
-            this.onConnectNodes(this.connectingSourceId, hitNode.id);
-          }
-          this.connectingSourceId = null;
-        }
-      }
-      return;
+  public findCandidateTargetNode(
+    worldX: number,
+    worldY: number,
+    excludeId?: string | null
+  ): GraphNode | null {
+    // 1. Direct hit-test with generous tolerance (radius + 16px, or label pill)
+    const directHit = this.hitTest(worldX, worldY, 16);
+    if (directHit && (!excludeId || directHit.id !== excludeId)) {
+      return directHit;
     }
 
+    // 2. Magnetic snap search within comfortable radius (55px in world space)
+    let closest: GraphNode | null = null;
+    let minDistanceSq = 55 * 55;
+
+    for (let i = this.nodes.length - 1; i >= 0; i--) {
+      const node = this.nodes[i];
+      if (excludeId && node.id === excludeId) continue;
+      const nx = node.x ?? 0;
+      const ny = node.y ?? 0;
+      const dx = worldX - nx;
+      const dy = worldY - ny;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minDistanceSq) {
+        minDistanceSq = distSq;
+        closest = node;
+      }
+    }
+
+    return closest;
+  }
+
+  private onPointerDown(e: PointerEvent) {
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
 
-    const hitNode = this.hitTest(worldPos.x, worldPos.y);
-
-    // Active connection flow (either initiated via connect button or HUD)
+    // Active connection flow (either initiated via connect button, right-click, or HUD)
     if (this.connectingSourceId) {
-      if (hitNode && hitNode.id !== this.connectingSourceId) {
+      const targetNode = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+
+      if (targetNode && targetNode.id !== this.connectingSourceId) {
         if (this.onConnectNodes) {
-          this.onConnectNodes(this.connectingSourceId, hitNode.id);
+          this.onConnectNodes(this.connectingSourceId, targetNode.id);
         }
+        this.justConnected = true;
         this.connectingSourceId = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
-        this.canvas.style.cursor = 'pointer';
+        this.canvas.style.cursor = 'grab';
         return;
       } else {
-        // Cancel if clicked empty canvas or same node
+        // Cancel if clicked empty canvas or outside any node
         this.connectingSourceId = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
@@ -334,6 +354,13 @@ export class GraphEngine {
         return;
       }
     }
+
+    // Prevent right-click from starting node dragging or canvas panning
+    if (e.button === 2) {
+      return;
+    }
+
+    const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
 
     // Quick Shift + Click connection shortcut from selected node
     if (e.shiftKey && this.selectedNodeId && hitNode && hitNode.id !== this.selectedNodeId) {
@@ -379,8 +406,12 @@ export class GraphEngine {
     this.mouseWorldPos = worldPos;
 
     if (this.connectingSourceId) {
-      const hitNode = this.hitTest(worldPos.x, worldPos.y);
-      this.canvas.style.cursor = hitNode && hitNode.id !== this.connectingSourceId ? 'crosshair' : 'crosshair';
+      const target = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+      this.hoveredNodeId = target ? target.id : null;
+      if (this.onHoverNode) {
+        this.onHoverNode(this.hoveredNodeId);
+      }
+      this.canvas.style.cursor = target ? 'pointer' : 'crosshair';
       return;
     }
 
@@ -405,7 +436,7 @@ export class GraphEngine {
       this.camera.y = screenY - this.panStart.y;
     } else {
       // Hover detection
-      const hitNode = this.hitTest(worldPos.x, worldPos.y);
+      const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
       this.canvas.style.cursor = hitNode ? 'pointer' : 'grab';
       if (this.onHoverNode) {
         this.onHoverNode(hitNode ? hitNode.id : null);
@@ -413,7 +444,26 @@ export class GraphEngine {
     }
   }
 
-  private onPointerUp() {
+  private onPointerUp(e: PointerEvent) {
+    if (this.connectingSourceId) {
+      const rect = this.canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const worldPos = this.screenToWorld(screenX, screenY);
+      const targetNode = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+      if (targetNode && targetNode.id !== this.connectingSourceId) {
+        if (this.onConnectNodes) {
+          this.onConnectNodes(this.connectingSourceId, targetNode.id);
+        }
+        this.justConnected = true;
+        this.connectingSourceId = null;
+        this.isDraggingNode = false;
+        this.dragNodeId = null;
+        this.canvas.style.cursor = 'grab';
+        return;
+      }
+    }
+
     if (this.isDraggingNode && this.dragNodeId) {
       if (this.worker) {
         this.worker.postMessage({ type: 'dragEnd', nodeId: this.dragNodeId });
@@ -445,17 +495,34 @@ export class GraphEngine {
     this.camera.zoom = newZoom;
   }
 
-  private hitTest(worldX: number, worldY: number): GraphNode | null {
+  private hitTest(worldX: number, worldY: number, extraTolerance = 14): GraphNode | null {
     for (let i = this.nodes.length - 1; i >= 0; i--) {
       const node = this.nodes[i];
       const nx = node.x ?? 0;
       const ny = node.y ?? 0;
-      const radius = ((node.size || 20) * this.displayConfig.nodeScale) + 6;
+      const r = (node.size || 20) * (this.displayConfig?.nodeScale || 1.0);
+      const radius = r + extraTolerance;
 
       const dx = worldX - nx;
       const dy = worldY - ny;
       if (dx * dx + dy * dy <= radius * radius) {
         return node;
+      }
+
+      // Check label pill below node if labels are shown
+      if (this.displayConfig?.showLabels && node.label) {
+        const labelY = ny + r + 6;
+        const approxTextWidth = Math.max(40, node.label.length * 8);
+        const halfW = approxTextWidth / 2 + 10;
+        const fontSize = this.displayConfig?.labelSize || 12;
+        if (
+          worldX >= nx - halfW &&
+          worldX <= nx + halfW &&
+          worldY >= labelY - 4 &&
+          worldY <= labelY + fontSize + 10
+        ) {
+          return node;
+        }
       }
     }
     return null;
@@ -538,7 +605,11 @@ export class GraphEngine {
       if (srcNode) {
         const sx = srcNode.x ?? 0;
         const sy = srcNode.y ?? 0;
-        const hitTarget = this.hitTest(this.mouseWorldPos.x, this.mouseWorldPos.y);
+        const hitTarget = this.findCandidateTargetNode(
+          this.mouseWorldPos.x,
+          this.mouseWorldPos.y,
+          this.connectingSourceId
+        );
         const tx =
           hitTarget && hitTarget.id !== this.connectingSourceId
             ? (hitTarget.x ?? this.mouseWorldPos.x)
@@ -550,8 +621,8 @@ export class GraphEngine {
 
         this.ctx.save();
         // Guideline dashed line
-        this.ctx.strokeStyle = '#06b6d4';
-        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = hitTarget ? '#22d3ee' : '#06b6d4';
+        this.ctx.lineWidth = hitTarget ? 2.5 : 2;
         this.ctx.setLineDash([6, 4]);
         this.ctx.beginPath();
         this.ctx.moveTo(sx, sy);
@@ -568,7 +639,7 @@ export class GraphEngine {
         this.ctx.setLineDash([]);
         this.ctx.stroke();
 
-        // Target hover highlight ring
+        // Target hover highlight ring + soft cyan glow
         if (hitTarget && hitTarget.id !== this.connectingSourceId) {
           const tgtRadius = ((hitTarget.size || 20) * this.displayConfig.nodeScale) + 8;
           this.ctx.beginPath();
@@ -576,6 +647,9 @@ export class GraphEngine {
           this.ctx.strokeStyle = '#22d3ee';
           this.ctx.lineWidth = 2.5;
           this.ctx.stroke();
+
+          this.ctx.fillStyle = 'rgba(34, 211, 238, 0.2)';
+          this.ctx.fill();
         }
 
         this.ctx.restore();
@@ -617,14 +691,14 @@ export class GraphEngine {
     const isSelected = Boolean(this.selectedEdgeId && edge.id === this.selectedEdgeId);
 
     this.ctx.save();
-    this.ctx.globalAlpha = isDimmed ? 0.08 : (isSelected ? 1.0 : (isHighlighted ? 0.9 : 0.35));
+    this.ctx.globalAlpha = isDimmed ? 0.2 : (isSelected ? 1.0 : (isHighlighted ? 0.95 : 0.7));
 
     this.ctx.strokeStyle = isSelected
       ? '#38bdf8'
-      : (isHighlighted ? '#818cf8' : (edge.color || '#475569'));
+      : (isHighlighted ? '#818cf8' : (edge.color || '#94a3b8'));
     this.ctx.lineWidth = isSelected
       ? 2.8
-      : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness);
+      : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness * 1.5);
 
     if (edge.type === 'dashed') {
       this.ctx.setLineDash([6, 6]);
