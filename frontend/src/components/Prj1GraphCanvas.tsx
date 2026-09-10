@@ -23,8 +23,6 @@ import {
   Search,
   Trash2,
   Palette,
-  ArrowRight,
-  ArrowLeftRight,
   ImageOff
 } from 'lucide-react';
 
@@ -76,11 +74,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     x: number;
     y: number;
   } | null>(null);
-  const [edgeMenu, setEdgeMenu] = useState<{
-    edgeId: string;
-    x: number;
-    y: number;
-  } | null>(null);
 
   const {
     nodes,
@@ -93,9 +86,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     addNode,
     removeNode,
     addEdge,
-    removeEdge,
-    updateEdgeRelationship,
-    reverseEdge,
     updateNodeProperties,
     nodeCategories
   } = useGraphStore();
@@ -181,11 +171,10 @@ export const Prj1GraphCanvas: React.FC = () => {
         return;
       }
       const target = e.target as HTMLElement | null;
-      if (target?.closest('.context-menu-popover') || target?.closest('.edge-menu-popover')) {
+      if (target?.closest('.context-menu-popover')) {
         return;
       }
       setContextMenu(null);
-      setEdgeMenu(null);
     };
     window.addEventListener('click', handleDismiss);
     return () => window.removeEventListener('click', handleDismiss);
@@ -204,23 +193,16 @@ export const Prj1GraphCanvas: React.FC = () => {
       onSelectNode: (id) => {
         setConnectSourceId(null);
         setContextMenu(null);
-        setEdgeMenu(null);
         if (id) {
           callbacksRef.current.selectNode(id);
         } else {
           callbacksRef.current.selectNode(null);
         }
       },
-      onSelectEdge: (id, clientX, clientY) => {
+      onSelectEdge: (id) => {
         setConnectSourceId(null);
         setContextMenu(null);
         callbacksRef.current.selectEdge(id);
-        if (id && clientX !== undefined && clientY !== undefined) {
-          justOpenedMenuRef.current = true;
-          setEdgeMenu({ edgeId: id, x: clientX, y: clientY });
-        } else {
-          setEdgeMenu(null);
-        }
       },
       onHoverNode: (id) => setHoveredNodeId(id),
       onConnectNodes: (sourceId, targetId) => {
@@ -488,136 +470,6 @@ export const Prj1GraphCanvas: React.FC = () => {
               <Trash2 className="w-3.5 h-3.5" />
               <span>Delete Node</span>
             </button>
-          </div>
-        );
-      })()}
-
-      {/* Interactive Edge Action Popover / Menu */}
-      {edgeMenu && (() => {
-        const edge = edges.find((e) => e.id === edgeMenu.edgeId);
-        if (!edge) return null;
-
-        const srcNode = nodes.find((n) => n.id === edge.sourceNodeId);
-        const tgtNode = nodes.find((n) => n.id === edge.targetNodeId);
-        const srcCat = nodeCategories.find((c) => c.id === srcNode?.categoryId);
-        const tgtCat = nodeCategories.find((c) => c.id === tgtNode?.categoryId);
-        const srcName = srcNode ? getProperty(srcNode.properties, 'name') || srcNode.id : edge.sourceNodeId;
-        const tgtName = tgtNode ? getProperty(tgtNode.properties, 'name') || tgtNode.id : edge.targetNodeId;
-
-        return (
-          <div
-            style={{
-              left: Math.max(20, Math.min(edgeMenu.x - 140, window.innerWidth - 310)),
-              top: Math.max(70, Math.min(edgeMenu.y - 160, window.innerHeight - 360))
-            }}
-            className="edge-menu-popover fixed z-50 w-72 p-3 rounded-2xl bg-[#0F172A]/95 backdrop-blur-2xl border border-cyan-500/30 shadow-2xl shadow-cyan-950/40 text-xs space-y-2.5 animate-fade-in select-none"
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {/* Header: Source -> Target & Close */}
-            <div className="flex items-center justify-between pb-2 border-b border-white/10">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: srcCat?.color || '#06b6d4' }} />
-                <span className="font-semibold text-slate-200 truncate max-w-[90px]">{srcName}</span>
-                <ArrowRight className="w-3 h-3 text-cyan-400 shrink-0" />
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: tgtCat?.color || '#06b6d4' }} />
-                <span className="font-semibold text-slate-200 truncate max-w-[90px]">{tgtName}</span>
-              </div>
-              <button
-                onClick={() => setEdgeMenu(null)}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
-                title="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Relationship Input */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-400 flex items-center justify-between">
-                <span>Relationship Label</span>
-                <span className="text-[10px] text-cyan-400 font-mono">Press Enter to save</span>
-              </label>
-              <input
-                type="text"
-                defaultValue={edge.relationship || ''}
-                key={edge.id + (edge.relationship || '')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const val = (e.target as HTMLInputElement).value.trim();
-                    if (val) {
-                      updateEdgeRelationship(edge.id, val);
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  const val = e.target.value.trim();
-                  if (val && val !== edge.relationship) {
-                    updateEdgeRelationship(edge.id, val);
-                  }
-                }}
-                className="w-full px-2.5 py-1.5 text-xs bg-slate-900/90 border border-white/15 rounded-lg text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono"
-                placeholder="e.g. relates to"
-              />
-            </div>
-
-            {/* Quick Change Presets */}
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Quick Change</span>
-              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar pr-0.5">
-                {[
-                  'Injects credentials into',
-                  'Triggers build in',
-                  'Pulls dependency into',
-                  'Publishes artifact to',
-                  'Deploys container to',
-                  'Monitors telemetry from',
-                  'Enforces branch policy on',
-                  'relates to'
-                ].map((preset) => (
-                  <button
-                    key={preset}
-                    onClick={() => updateEdgeRelationship(edge.id, preset)}
-                    className={`text-[10px] px-2 py-0.5 rounded-md border transition-all truncate text-left cursor-pointer ${
-                      edge.relationship === preset
-                        ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-semibold'
-                        : 'bg-white/[0.04] border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions: Reverse & Delete */}
-            <div className="pt-2 border-t border-white/10 flex items-center gap-1.5">
-              <button
-                onClick={() => {
-                  reverseEdge(edge.id);
-                  if (workerRef.current) workerRef.current.postMessage({ type: 'reheat' });
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/10 text-slate-200 border border-white/10 transition-colors text-[11px] font-medium cursor-pointer"
-                title="Reverse connection direction"
-              >
-                <ArrowLeftRight className="w-3 h-3 text-cyan-400" />
-                <span>Reverse</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  removeEdge(edge.id);
-                  setEdgeMenu(null);
-                  if (workerRef.current) workerRef.current.postMessage({ type: 'reheat' });
-                }}
-                className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-colors text-[11px] font-medium cursor-pointer"
-                title="Delete connection"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>Delete</span>
-              </button>
-            </div>
           </div>
         );
       })()}
