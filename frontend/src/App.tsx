@@ -15,21 +15,21 @@ export const App: React.FC = () => {
   }, [loadNodeTypes, loadGraph]);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#070a13] text-slate-100">
-      {/* Top Application Header */}
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0B1220] text-slate-100">
+      {/* Clean 56px Top Bar */}
       <Header />
 
-      {/* Main 3-Panel Workspace: Minimal Sidebar, Focus Graph, Inspector Panel */}
+      {/* Main Graph-First Workspace */}
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Minimal Left Sidebar (Colored Dots + Category Names) */}
+        {/* Minimal 190px Sidebar */}
         <Sidebar />
 
-        {/* Center Canvas (Obsidian Graph View, Zoom-Based Labels) */}
+        {/* Hero Graph Canvas */}
         <main className="flex-1 relative overflow-hidden">
           <GraphCanvas />
         </main>
 
-        {/* Right Inspector Panel (Single Source of Truth, No Popups) */}
+        {/* Floating 300px Inspector */}
         <DetailsPanel />
       </div>
     </div>

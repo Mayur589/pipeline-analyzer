@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import { getProperty, propertiesToObject } from '../types/graph';
-import { Trash2, ArrowRight, Link2, Check, X } from 'lucide-react';
+import { ArrowRight, X } from 'lucide-react';
 
 const RELATIONSHIP_PRESETS = [
   'Injects credentials into',
@@ -69,7 +69,7 @@ export const DetailsPanel: React.FC = () => {
 
     debounceNodeTimerRef.current = setTimeout(() => {
       updateNodeProperties(selectedNode.id, updated);
-    }, 250);
+    }, 200);
   };
 
   // Handle edge relationship change with debounce auto-save
@@ -84,7 +84,7 @@ export const DetailsPanel: React.FC = () => {
 
     debounceEdgeTimerRef.current = setTimeout(() => {
       updateEdgeRelationship(selectedEdge.id, newRel);
-    }, 250);
+    }, 200);
   };
 
   // Cleanup timers on unmount
@@ -98,9 +98,9 @@ export const DetailsPanel: React.FC = () => {
   // 1. When nothing is selected
   if (!selectedNode && !selectedEdge) {
     return (
-      <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col justify-center items-center p-6 text-center select-none z-20">
-        <p className="text-xs text-slate-500 leading-relaxed max-w-[220px]">
-          Select a node or edge to view its details.
+      <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col justify-center items-center p-6 text-center select-none z-20">
+        <p className="text-xs text-slate-500 leading-relaxed max-w-[200px]">
+          Select a node to inspect or edit its properties.
         </p>
       </aside>
     );
@@ -115,71 +115,64 @@ export const DetailsPanel: React.FC = () => {
     const targetName = targetNode ? getProperty(targetNode.properties, 'name') || targetNode.id : selectedEdge.targetNodeId;
 
     return (
-      <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col h-full z-20 select-none">
+      <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
         {/* Header */}
-        <div className="p-4 border-b border-slate-900 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link2 className="w-4 h-4 text-sky-400" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-              Edge Relationship
-            </span>
-          </div>
+        <div className="p-5 border-b border-white/5 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-200">
+            Relationship
+          </h3>
           <button
             onClick={() => selectEdge(null)}
-            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
+            className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Connected Endpoints (Read-Only) */}
-        <div className="p-4 border-b border-slate-900/80 bg-slate-950/40 text-xs space-y-2">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-mono text-slate-500">Source</span>
-            <span className="text-slate-200 font-medium truncate max-w-[160px]">{sourceName}</span>
+        {/* Endpoints */}
+        <div className="p-5 border-b border-white/5 text-xs space-y-2 text-slate-400">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">From</span>
+            <span className="text-slate-200 font-medium truncate max-w-[170px]">{sourceName}</span>
           </div>
           <div className="flex items-center justify-center text-slate-600">
-            <ArrowRight className="w-3.5 h-3.5 text-sky-400" />
+            <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
           </div>
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-mono text-slate-500">Target</span>
-            <span className="text-slate-200 font-medium truncate max-w-[160px]">{targetName}</span>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500">To</span>
+            <span className="text-slate-200 font-medium truncate max-w-[170px]">{targetName}</span>
           </div>
         </div>
 
-        {/* Editable Relationship Field */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        {/* Relationship editor */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-200">
-              Relationship Label
+            <label className="block text-xs font-medium text-slate-300">
+              Relationship
             </label>
             <input
               type="text"
               value={localRelationship}
               onChange={(e) => handleRelationshipChange(e.target.value)}
               placeholder="e.g. Injects credentials into"
-              className="w-full px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-100 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-all font-mono"
+              className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-100 placeholder-slate-600 focus:outline-none focus:border-white/30 transition-all font-mono"
             />
-            <span className="text-[10px] text-slate-500 block">
-              Auto-saves on edit. Appears on canvas when zoom ≥ 1.2.
-            </span>
           </div>
 
-          {/* Quick Presets */}
           <div className="space-y-1.5 pt-2">
-            <span className="text-[11px] font-medium text-slate-400 block">
-              Presets
+            <span className="text-xs text-slate-500 block">
+              Suggestions
             </span>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {RELATIONSHIP_PRESETS.map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   onClick={() => handleRelationshipChange(preset)}
-                  className={`text-[10px] px-2 py-1 rounded border transition-colors font-mono text-left ${
+                  className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors text-left ${
                     localRelationship === preset
-                      ? 'bg-sky-500/20 border-sky-500/80 text-sky-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                      ? 'bg-white/10 border-white/30 text-white'
+                      : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/15'
                   }`}
                 >
                   {preset}
@@ -189,72 +182,62 @@ export const DetailsPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Actions Footer */}
-        <div className="p-4 border-t border-slate-900 bg-slate-950/40">
+        {/* Footer */}
+        <div className="p-5 border-t border-white/5">
           <button
             onClick={() => removeEdge(selectedEdge.id)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg transition-colors"
+            className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete Edge</span>
+            Delete Relationship
           </button>
         </div>
       </aside>
     );
   }
 
-  // 3. When a node is selected (selectedNode is defined)
+  // 3. When a node is selected
   if (!selectedNode) {
     return null;
   }
 
   const category = nodeCategories.find((c) => c.id === selectedNode.categoryId);
   const color = category?.color || '#06b6d4';
+  const nodeName = localProps.name || selectedNode.id;
 
   return (
-    <aside className="w-[320px] shrink-0 bg-[#080d19] border-l border-slate-900 flex flex-col h-full z-20 select-none">
-      {/* Header with Category (Read-Only) */}
-      <div className="p-4 border-b border-slate-900">
+    <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
+      {/* Header with larger typography and category dot */}
+      <div className="p-5 border-b border-white/5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div
-              className="w-3 h-3 rounded-full"
-              style={{
-                backgroundColor: color,
-                boxShadow: `0 0 8px ${color}88`
-              }}
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: color }}
             />
-            <span className="text-xs font-semibold text-slate-100 uppercase tracking-wider">
-              {category?.category || 'Node Inspector'}
+            <span className="text-xs text-slate-400 truncate">
+              {category?.category || 'Supply Chain Node'}
             </span>
           </div>
 
           <button
             onClick={() => selectNode(null)}
-            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800/60 transition-colors"
+            className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-slate-500">
-          <span>Category (read-only)</span>
-          <span className="truncate max-w-[120px]">{selectedNode.id}</span>
-        </div>
+        <h3 className="text-base font-semibold text-slate-100 mt-2 truncate">
+          {nodeName}
+        </h3>
       </div>
 
-      {/* Scrollable Dynamic Properties Form */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        <div className="flex items-center justify-between pb-1 border-b border-slate-900">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            Properties
-          </span>
-          <span className="text-[10px] font-mono text-emerald-500 flex items-center gap-1">
-            <Check className="w-2.5 h-2.5" /> Auto-saved
-          </span>
+      {/* Properties List */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+        <div className="text-xs font-medium text-slate-400 uppercase tracking-wider pb-1 border-b border-white/5">
+          Properties
         </div>
 
-        {/* Dynamic inputs from category defaultProperties */}
         {category?.defaultProperties.map((propKey) => {
           const fieldDef = category.fieldDefs?.find((f) => f.key === propKey);
           const label = fieldDef?.label || propKey.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
@@ -277,20 +260,20 @@ export const DetailsPanel: React.FC = () => {
             return (
               <label
                 key={propKey}
-                className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 cursor-pointer transition-colors group"
+                className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-white/[0.02] border border-white/5 cursor-pointer transition-colors"
               >
                 <input
                   type="checkbox"
                   checked={isChecked}
                   onChange={(e) => handlePropertyChange(propKey, e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-sky-500 bg-slate-950 border-slate-700 focus:ring-sky-500/40 accent-sky-500 transition-all cursor-pointer"
+                  className="mt-0.5 w-4 h-4 rounded text-cyan-500 bg-slate-900 border-white/20 focus:ring-0 accent-cyan-500 transition-all cursor-pointer"
                 />
                 <div className="text-xs">
-                  <span className="font-medium text-slate-200 group-hover:text-white block">
+                  <span className="font-medium text-slate-200 block">
                     {label}
                   </span>
                   {fieldDef?.description && (
-                    <span className="text-[10px] text-slate-500 block mt-0.5 leading-relaxed">
+                    <span className="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
                       {fieldDef.description}
                     </span>
                   )}
@@ -301,17 +284,17 @@ export const DetailsPanel: React.FC = () => {
 
           if (type === 'select' && fieldDef?.options) {
             return (
-              <div key={propKey} className="space-y-1">
-                <label className="block text-[11px] font-medium text-slate-300">
+              <div key={propKey} className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-300">
                   {label}
                 </label>
                 <select
                   value={currentValue}
                   onChange={(e) => handlePropertyChange(propKey, e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-200 focus:outline-none focus:border-sky-500 transition-all"
+                  className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 transition-all"
                 >
                   {fieldDef.options.map((opt) => (
-                    <option key={opt} value={opt} className="bg-slate-900 text-slate-200">
+                    <option key={opt} value={opt} className="bg-[#0B1220] text-slate-200">
                       {opt}
                     </option>
                   ))}
@@ -321,35 +304,29 @@ export const DetailsPanel: React.FC = () => {
           }
 
           return (
-            <div key={propKey} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="block text-[11px] font-medium text-slate-300">
-                  {label}
-                </label>
-                {propKey === 'name' && (
-                  <span className="text-[9px] font-mono text-sky-400">Node Label</span>
-                )}
-              </div>
+            <div key={propKey} className="space-y-1.5">
+              <label className="block text-xs font-medium text-slate-300">
+                {label}
+              </label>
               <input
                 type="text"
                 value={currentValue}
                 onChange={(e) => handlePropertyChange(propKey, e.target.value)}
                 placeholder={fieldDef?.placeholder || `Enter ${label}...`}
-                className="w-full px-2.5 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-md text-slate-200 placeholder-slate-600 focus:outline-none focus:border-sky-500 transition-all"
+                className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 transition-all"
               />
             </div>
           );
         })}
       </div>
 
-      {/* Actions Footer */}
-      <div className="p-4 border-t border-slate-900 bg-slate-950/40">
+      {/* Footer */}
+      <div className="p-5 border-t border-white/5">
         <button
           onClick={() => removeNode(selectedNode.id)}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg transition-colors"
+          className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center"
         >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Delete Node</span>
+          Delete Node
         </button>
       </div>
     </aside>

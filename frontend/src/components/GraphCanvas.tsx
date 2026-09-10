@@ -51,7 +51,6 @@ const CanvasInner: React.FC = () => {
 
   // Synchronize store nodes into local React Flow state
   useEffect(() => {
-    // If a node is currently being dragged, don't interrupt the live drag
     if (isDraggingRef.current) return;
 
     setFlowNodes(
@@ -84,7 +83,7 @@ const CanvasInner: React.FC = () => {
     );
   }, [edges, selectedEdgeId, setFlowEdges]);
 
-  // Live node dragging handler
+  // Real-time live dragging handler
   const handleNodesChange = useCallback(
     (changes: NodeChange<FlowNode>[]) => {
       onNodesChange(changes);
@@ -96,7 +95,6 @@ const CanvasInner: React.FC = () => {
     isDraggingRef.current = true;
   }, []);
 
-  // When drag ends, persist final position without delayed snapping
   const onNodeDragStop = useCallback(
     (_event: any, node: FlowNode) => {
       isDraggingRef.current = false;
@@ -111,7 +109,7 @@ const CanvasInner: React.FC = () => {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  // Drop onto canvas -> IMMEDIATELY create node, select it, NO popup!
+  // Drop onto canvas -> IMMEDIATELY create node, select it, NO popup
   const onDrop = useCallback(
     async (event: React.DragEvent) => {
       event.preventDefault();
@@ -120,8 +118,8 @@ const CanvasInner: React.FC = () => {
       if (!categoryId) return;
 
       const position = screenToFlowPosition({
-        x: event.clientX - 42,
-        y: event.clientY - 42
+        x: event.clientX - 34,
+        y: event.clientY - 34
       });
 
       const category = nodeCategories.find((c) => c.id === categoryId);
@@ -151,7 +149,6 @@ const CanvasInner: React.FC = () => {
         });
       }
 
-      // Immediately insert node through mock API and select it
       await addNode({
         categoryId,
         properties: defaultProperties,
@@ -161,7 +158,7 @@ const CanvasInner: React.FC = () => {
     [screenToFlowPosition, nodeCategories, addNode]
   );
 
-  // Connecting handles -> IMMEDIATELY create edge, select it, NO popup!
+  // Connecting handles -> IMMEDIATELY create edge, select it
   const onConnect = useCallback(
     async (connection: Connection) => {
       if (connection.source && connection.target && connection.source !== connection.target) {
@@ -197,7 +194,7 @@ const CanvasInner: React.FC = () => {
   }, [clearSelection]);
 
   return (
-    <div className="relative flex-1 h-full w-full bg-[#070a13]" ref={reactFlowWrapper}>
+    <div className="relative flex-1 h-full w-full bg-[#0B1220]" ref={reactFlowWrapper}>
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
@@ -213,36 +210,36 @@ const CanvasInner: React.FC = () => {
         onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: 0.25 }}
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         minZoom={0.1}
         maxZoom={3}
         proOptions={{ hideAttribution: true }}
       >
-        {/* Subtle Obsidian Dotted Background */}
+        {/* Subtle Charcoal background with faint low-opacity dots */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={28}
+          gap={24}
           size={1}
-          color="rgba(148, 163, 184, 0.12)"
+          color="rgba(255, 255, 255, 0.04)"
         />
 
-        {/* Minimal Controls */}
+        {/* Quiet Minimal Controls */}
         <Controls
           showInteractive={false}
-          className="!bottom-4 !left-4 opacity-70 hover:opacity-100 transition-opacity"
+          className="!bottom-4 !left-4 opacity-40 hover:opacity-90 transition-opacity"
         />
       </ReactFlow>
 
-      {/* Minimal Empty State */}
+      {/* Clean Obsidian-Style Empty State */}
       {nodes.length === 0 && (
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-6 select-none">
-          <div className="text-center space-y-1.5 opacity-60">
-            <p className="text-sm font-medium text-slate-400">
-              Drag a node from the sidebar to begin building your pipeline.
-            </p>
-            <p className="text-xs text-slate-600 font-mono">
-              Obsidian Graph View Mode
+          <div className="text-center space-y-2 max-w-sm">
+            <h2 className="text-base font-medium text-slate-200 tracking-tight">
+              Build your software supply chain
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed font-normal">
+              Drag a category from the left sidebar to create your first node.
             </p>
           </div>
         </div>

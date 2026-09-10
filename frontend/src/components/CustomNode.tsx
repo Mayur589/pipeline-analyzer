@@ -21,47 +21,47 @@ export const CustomNode = memo(({ id, data, selected }: NodeProps) => {
   return (
     <div
       onClick={handleClick}
-      className="relative flex items-center justify-center cursor-pointer select-none"
-      style={{ width: 84, height: 84 }}
+      className="relative flex items-center justify-center cursor-pointer select-none group"
+      style={{ width: 68, height: 68 }}
     >
-      {/* 4 Connectors: Top, Right, Bottom, Left - Equidistant and exactly on circumference */}
+      {/* 4 Equidistant handles on the circle circumference */}
       <Handle
         type="target"
         position={Position.Top}
         id="target-top"
-        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+        className="opacity-70 group-hover:opacity-100 transition-opacity cursor-crosshair"
       />
       <Handle
         type="source"
         position={Position.Right}
         id="source-right"
-        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+        className="opacity-70 group-hover:opacity-100 transition-opacity cursor-crosshair"
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="source-bottom"
-        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+        className="opacity-70 group-hover:opacity-100 transition-opacity cursor-crosshair"
       />
       <Handle
         type="target"
         position={Position.Left}
         id="target-left"
-        className="opacity-80 hover:opacity-100 transition-opacity cursor-crosshair"
+        className="opacity-70 group-hover:opacity-100 transition-opacity cursor-crosshair"
       />
 
-      {/* Circular Node Body: Fill strictly contained inside, no outer glow/overflow */}
+      {/* Perfect circular node: solid category color inside only, thin neutral border, subtle white ring on selection */}
       <div
-        className={`w-full h-full rounded-full flex items-center justify-center text-center p-2.5 transition-all duration-150 overflow-hidden ${
+        className={`w-full h-full rounded-full flex items-center justify-center text-center p-2 transition-all duration-150 overflow-hidden ${
           selected
-            ? 'border-2 border-white ring-2 ring-white/30'
-            : 'border border-white/20 hover:border-white/60'
+            ? 'border border-white ring-2 ring-white/60'
+            : 'border border-white/20 hover:border-white/40'
         }`}
         style={{
           backgroundColor: color
         }}
       >
-        <span className="text-[11px] font-semibold text-white tracking-tight leading-tight line-clamp-3 select-none break-words drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+        <span className="text-[11px] font-medium text-white tracking-tight leading-tight line-clamp-3 select-none break-words">
           {name}
         </span>
       </div>

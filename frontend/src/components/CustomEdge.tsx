@@ -49,9 +49,8 @@ export const CustomEdge: React.FC<EdgeProps> = ({
         markerEnd={markerEnd}
         interactionWidth={16}
         style={{
-          stroke: isEdgeSelected ? '#38bdf8' : 'rgba(100, 116, 139, 0.35)',
-          strokeWidth: isEdgeSelected ? 2 : 1.2,
-          filter: isEdgeSelected ? 'drop-shadow(0 0 4px rgba(56, 189, 248, 0.7))' : undefined,
+          stroke: isEdgeSelected ? 'rgba(255, 255, 255, 0.75)' : 'rgba(148, 163, 184, 0.25)',
+          strokeWidth: isEdgeSelected ? 1.5 : 1,
           cursor: 'pointer',
           ...style
         }}
@@ -63,16 +62,16 @@ export const CustomEdge: React.FC<EdgeProps> = ({
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
             pointerEvents: isLabelVisible ? 'all' : 'none',
             opacity: isLabelVisible ? 1 : 0,
-            transition: 'opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+            transition: 'opacity 0.2s ease-in-out'
           }}
           className="nodrag nopan select-none cursor-pointer"
           onClick={onEdgeClick}
         >
           <div
-            className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-tight transition-all duration-200 shadow-sm ${
+            className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-tight transition-colors duration-150 ${
               isEdgeSelected
-                ? 'bg-sky-950/90 text-sky-300 border border-sky-500/80 shadow-sky-500/20'
-                : 'bg-[#0b1120]/90 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                ? 'bg-[#151d2f] text-white border border-white/20'
+                : 'bg-[#0B1220]/90 text-slate-400 border border-white/10 hover:text-slate-200'
             }`}
           >
             {relationship}
