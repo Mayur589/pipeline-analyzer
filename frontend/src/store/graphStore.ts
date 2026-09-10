@@ -31,6 +31,7 @@ interface GraphStoreState {
   removeNode: (nodeId: string) => Promise<void>;
   addEdge: (input: Omit<CreateEdgeInput, 'projectId'>) => Promise<Edge>;
   updateEdgeRelationship: (edgeId: string, relationship: string) => Promise<void>;
+  reverseEdge: (edgeId: string) => Promise<void>;
   removeEdge: (edgeId: string) => Promise<void>;
   selectNode: (nodeId: string | null) => void;
   selectEdge: (edgeId: string | null) => void;
@@ -176,6 +177,19 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     } catch (error) {
       console.error('Failed to update edge relationship:', error);
     }
+  },
+
+  reverseEdge: async (edgeId: string) => {
+    const edge = get().edges.find((e) => e.id === edgeId);
+    if (!edge) return;
+    const newSource = edge.targetNodeId;
+    const newTarget = edge.sourceNodeId;
+
+    set((state) => ({
+      edges: state.edges.map((e) =>
+        e.id === edgeId ? { ...e, sourceNodeId: newSource, targetNodeId: newTarget } : e
+      )
+    }));
   },
 
   removeEdge: async (edgeId: string) => {

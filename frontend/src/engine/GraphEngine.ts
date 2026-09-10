@@ -42,7 +42,7 @@ export class GraphEngine {
 
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
-  private onSelectEdge?: (id: string | null) => void;
+  private onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
   private onHoverNode?: (id: string | null) => void;
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
@@ -52,7 +52,7 @@ export class GraphEngine {
     canvas: HTMLCanvasElement,
     options: {
       onSelectNode?: (id: string | null, e?: PointerEvent) => void;
-      onSelectEdge?: (id: string | null) => void;
+      onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
       onHoverNode?: (id: string | null) => void;
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
@@ -512,7 +512,7 @@ export class GraphEngine {
       if (hitEdge) {
         this.selectedEdgeId = hitEdge.id;
         this.selectedNodeId = null;
-        if (this.onSelectEdge) this.onSelectEdge(hitEdge.id);
+        if (this.onSelectEdge) this.onSelectEdge(hitEdge.id, e.clientX, e.clientY);
         if (this.onSelectNode) this.onSelectNode(null, e);
       } else {
         this.isPanning = true;

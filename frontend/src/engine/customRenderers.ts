@@ -109,13 +109,6 @@ function drawStandardNode(
   ctx.strokeStyle = isSelected ? '#ffffff' : adjustColor(color, -30);
   ctx.lineWidth = isSelected ? 3 : 1.5;
   ctx.stroke();
-
-  // Document Icon inside node
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `${Math.max(10, r * 0.8)}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('📄', x, y);
 }
 
 function drawImageNode(
@@ -129,35 +122,32 @@ function drawImageNode(
 ) {
   const imageUrl = node.metadata?.imageUrl;
   const loadedImg = imageUrl ? getOrLoadImage(imageUrl, onImageLoad) : null;
+  const color = node.color || '#0ea5e9';
 
-  // Background frame
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = '#1e293b';
-  ctx.fill();
+  if (loadedImg && loadedImg.complete && loadedImg.naturalWidth > 0) {
+    // Background frame
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e293b';
+    ctx.fill();
 
-  if (loadedImg) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r - 2, 0, Math.PI * 2);
     ctx.clip();
     ctx.drawImage(loadedImg, x - r, y - r, r * 2, r * 2);
     ctx.restore();
-  } else {
-    // Fallback Image Icon
-    ctx.fillStyle = '#ec4899';
-    ctx.font = `${Math.max(10, r * 0.8)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🖼️', x, y);
-  }
 
-  // Border ring
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.strokeStyle = isSelected ? '#ffffff' : '#ec4899';
-  ctx.lineWidth = isSelected ? 3 : 2;
-  ctx.stroke();
+    // Border ring
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = isSelected ? '#ffffff' : color;
+    ctx.lineWidth = isSelected ? 3 : 2;
+    ctx.stroke();
+  } else {
+    // When image is not present or removed, render pure Obsidian circular node
+    drawStandardNode(ctx, node, x, y, r, isSelected);
+  }
 }
 
 function drawTaskNode(

@@ -6,7 +6,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Identity & People',
     defaultProperties: ['name', 'role', 'mfaEnabled', 'accessLevel'],
     description: 'Developers, admins, service accounts, and IAM roles accessing the pipeline.',
-    color: '#38bdf8',
+    color: '#0ea5e9',
     fieldDefs: [
       { key: 'name', label: 'Name / Identifier', type: 'text', defaultValue: 'Security Engineer', placeholder: 'e.g., Core DevOps Team' },
       { key: 'role', label: 'Role / Team', type: 'select', options: ['Maintainer', 'Contributor', 'DevOps Admin', 'Service Account', 'External Auditor'], defaultValue: 'Maintainer' },
@@ -19,7 +19,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Source Control',
     defaultProperties: ['name', 'visibility', 'branchProtection'],
     description: 'Repositories, version control systems, and code review governance.',
-    color: '#818cf8',
+    color: '#6366f1',
     fieldDefs: [
       { key: 'name', label: 'Repository Name', type: 'text', defaultValue: 'org/backend-service', placeholder: 'e.g., org/auth-gateway' },
       { key: 'visibility', label: 'Visibility', type: 'select', options: ['Private', 'Internal', 'Public'], defaultValue: 'Private' },
@@ -56,7 +56,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'CI/CD Pipeline',
     defaultProperties: ['name', 'runnerType', 'approvalRequired'],
     description: 'Workflows, orchestration engines, automated test suites, and gates.',
-    color: '#06b6d4',
+    color: '#14b8a6',
     fieldDefs: [
       { key: 'name', label: 'Pipeline Name', type: 'text', defaultValue: 'Release-Pipeline-Prod', placeholder: 'e.g., CI-Build-And-Sign' },
       { key: 'runnerType', label: 'Runner Infrastructure', type: 'select', options: ['GitHub Actions (Self-Hosted)', 'GitLab Runner (Protected)', 'Argo Workflows', 'Tekton Pipelines', 'CircleCI Cloud'], defaultValue: 'GitHub Actions (Self-Hosted)' },
@@ -68,7 +68,7 @@ export const NODE_CATEGORIES: NodeCategory[] = [
     category: 'Secrets & Credentials',
     defaultProperties: ['name', 'vaultType', 'autoRevoke'],
     description: 'API keys, signing certificates, deployment tokens, and KMS keys.',
-    color: '#eab308',
+    color: '#84cc16',
     fieldDefs: [
       { key: 'name', label: 'Secret Identifier / Role', type: 'text', defaultValue: 'Cosign-KMS-Signer-Key', placeholder: 'e.g., AWS-OIDC-Deployer' },
       { key: 'vaultType', label: 'Vault Provider', type: 'select', options: ['HashiCorp Vault', 'AWS KMS / Secrets Manager', 'GCP Secret Manager', 'Azure Key Vault', 'OIDC Short-Lived Token'], defaultValue: 'OIDC Short-Lived Token' },

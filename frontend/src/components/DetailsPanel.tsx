@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import type { Node, Edge, NodeCategory } from '../types/graph';
 import { getProperty, propertiesToObject } from '../types/graph';
-import { ArrowRight, X, Link2, Edit2 } from 'lucide-react';
+import { ArrowRight, X, Link2, Edit2, ImageOff, ArrowLeftRight } from 'lucide-react';
 
 const RELATIONSHIP_PRESETS = [
   'Injects credentials into',
@@ -204,6 +204,37 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
           );
         })}
 
+        {/* Custom Node Image / Icon Section */}
+        {Boolean(localProps.imageUrl || localProps.image) && (
+          <div className="p-3 rounded-lg bg-white/[0.02] border border-white/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-300">Custom Image</span>
+              <span className="text-[10px] text-emerald-400 font-mono">Active</span>
+            </div>
+            {localProps.imageUrl && (
+              <img
+                src={localProps.imageUrl}
+                alt="Node thumbnail"
+                className="w-14 h-14 rounded-lg object-cover border border-white/10"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const updated = { ...localProps };
+                delete updated.imageUrl;
+                delete updated.image;
+                setLocalProps(updated);
+                onUpdateProperties(node.id, updated);
+              }}
+              className="w-full py-1.5 px-2.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-colors text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <ImageOff className="w-3.5 h-3.5" />
+              <span>Remove Image from Node</span>
+            </button>
+          </div>
+        )}
+
         {/* Connections Section */}
         <div className="pt-3 border-t border-white/5 space-y-3">
           <div className="flex items-center justify-between">
@@ -336,6 +367,7 @@ interface EdgeInspectorProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onUpdateRelationship: (id: string, relationship: string) => Promise<void>;
+  onReverse?: (id: string) => Promise<void> | void;
 }
 
 const EdgeInspector: React.FC<EdgeInspectorProps> = ({
@@ -344,7 +376,8 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   targetNode,
   onClose,
   onDelete,
-  onUpdateRelationship
+  onUpdateRelationship,
+  onReverse
 }) => {
   const [localRelationship, setLocalRelationship] = useState(() => edge.relationship || '');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
@@ -462,10 +495,19 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="p-5 border-t border-white/5">
+      <div className="p-5 border-t border-white/5 space-y-2">
+        {onReverse && (
+          <button
+            onClick={() => onReverse(edge.id)}
+            className="w-full py-2 text-xs font-medium text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/10 border border-white/10 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Reverse Direction</span>
+          </button>
+        )}
         <button
           onClick={() => onDelete(edge.id)}
-          className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center"
+          className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center cursor-pointer"
         >
           Delete Relationship
         </button>
@@ -486,6 +528,7 @@ export const DetailsPanel: React.FC = () => {
     removeEdge,
     updateNodeProperties,
     updateEdgeRelationship,
+    reverseEdge,
     nodeCategories
   } = useGraphStore();
 
@@ -527,6 +570,7 @@ export const DetailsPanel: React.FC = () => {
         onClose={() => selectEdge(null)}
         onDelete={removeEdge}
         onUpdateRelationship={updateEdgeRelationship}
+        onReverse={reverseEdge}
       />
     );
   }
