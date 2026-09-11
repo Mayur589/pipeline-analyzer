@@ -57,6 +57,17 @@ export interface Edge {
   relationshipId: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  description?: string;
+}
+
 export interface Graph {
   projectId: string;
   nodes: Node[];

@@ -5,13 +5,15 @@ import type {
   NodeCategory,
   CreateNodeInput,
   CreateEdgeInput,
-  NodeProperties
+  NodeProperties,
+  Project
 } from '../types/graph';
 import { getNodeTypes } from '../mock-api/nodeTypes';
 import { getGraph } from '../mock-api/graph';
 import { insertNode, updateNode, deleteNode } from '../mock-api/nodes';
 import { insertEdge, updateEdge, deleteEdge } from '../mock-api/edges';
 import { getValidRelationships, SemanticGraphError } from '../mock-api/relationships';
+import { createProject } from '../mock-api/projects';
 
 interface GraphStoreState {
   // Core Graph State
@@ -40,6 +42,7 @@ interface GraphStoreState {
   clearSelection: () => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   clearCanvas: () => void;
+  createNewProject: (name: string, description?: string) => Promise<Project>;
 }
 
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
@@ -273,5 +276,16 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
   },
 
-  clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null })
+  clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null }),
+  createNewProject: async (name: string, description?: string) => {
+    const project = await createProject({ name, description });
+    set({
+      projectId: project.id,
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      selectedEdgeId: null
+    });
+    return project;
+  }
 }));

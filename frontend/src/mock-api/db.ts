@@ -1,11 +1,19 @@
-import type { Node, Edge } from '../types/graph';
+import type { Node, Edge, Project } from '../types/graph';
 
 // In-memory mock database state
 interface MockDatabase {
+  projects: Record<string, Project>;
   graphs: Record<string, { nodes: Node[]; edges: Edge[] }>;
 }
 
 export const mockDb: MockDatabase = {
+  projects: {
+    'default-pipeline': {
+      id: 'default-pipeline',
+      name: 'Default Pipeline',
+      description: 'Default supply chain security pipeline graph'
+    }
+  },
   graphs: {
     'default-pipeline': {
       nodes: [],
@@ -19,6 +27,13 @@ export function getOrCreateProjectGraph(projectId: string): { nodes: Node[]; edg
     mockDb.graphs[projectId] = {
       nodes: [],
       edges: []
+    };
+  }
+  if (!mockDb.projects[projectId]) {
+    mockDb.projects[projectId] = {
+      id: projectId,
+      name: projectId,
+      description: ''
     };
   }
   return mockDb.graphs[projectId];
