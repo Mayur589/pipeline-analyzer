@@ -6,13 +6,13 @@ import { Prj1GraphCanvas } from './components/Prj1GraphCanvas';
 import { DetailsPanel } from './components/DetailsPanel';
 
 export const App: React.FC = () => {
-  const { loadNodeTypes, loadGraph } = useGraphStore();
+  const { loadNodeTypes, loadProjects } = useGraphStore();
 
   useEffect(() => {
-    // Initialize node types and graph from mock backend
+    // Initialize node types and projects from live backend
     loadNodeTypes();
-    loadGraph();
-  }, [loadNodeTypes, loadGraph]);
+    loadProjects();
+  }, [loadNodeTypes, loadProjects]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0B1220] text-slate-100">

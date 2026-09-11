@@ -1,0 +1,97 @@
+{
+  "projects": [
+    {
+      "Id": "proj_1a091ab846f_0",
+      "Name": "Test Project"
+    },
+    {
+      "Id": "proj_1a091b395af_7",
+      "Name": "Integration Test Proj 1789150860718"
+    },
+    {
+      "Id": "proj_1a091b4db32_b",
+      "Name": "Integration Test Proj 1789150944049"
+    }
+  ],
+  "nodes": [
+    {
+      "Id": "node_1a091b83070_f",
+      "CategoryId": "identity_people",
+      "Properties": {
+        "role": "Maintainer",
+        "mfaEnabled": true,
+        "accessLevel": "Admin",
+        "name": "Security Engineer"
+      }
+    },
+    {
+      "Id": "node_1a091b85684_10",
+      "CategoryId": "source_control",
+      "Properties": {
+        "branchProtection": true,
+        "visibility": "Private",
+        "name": "org/backend-service"
+      }
+    },
+    {
+      "Id": "node_1a091b8c4c5_12",
+      "CategoryId": "source_control",
+      "Properties": {
+        "name": "org/backend-service",
+        "visibility": "Private",
+        "branchProtection": true
+      }
+    },
+    {
+      "Id": "node_1a091b93b1d_14",
+      "CategoryId": "artifact_storage",
+      "Properties": {
+        "name": "registry.internal.corp/app",
+        "immutableTags": true,
+        "signatureVerification": true,
+        "registryType": "Harbor OCI Registry"
+      }
+    },
+    {
+      "Id": "node_1a091bbaa02_16",
+      "CategoryId": "dependencies",
+      "Properties": {
+        "vulnerabilityScanning": true,
+        "name": "npm-production-deps",
+        "packageManager": "npm / yarn / pnpm"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "Id": "edge_1a091b8dddf_13",
+      "SourceNodeId": "node_1a091b83070_f",
+      "TargetNodeId": "node_1a091b8c4c5_12",
+      "Relationship": "maintains"
+    },
+    {
+      "Id": "edge_1a091bb180d_15",
+      "SourceNodeId": "node_1a091b83070_f",
+      "TargetNodeId": "node_1a091b85684_10",
+      "Relationship": "contributes_to"
+    },
+    {
+      "Id": "edge_1a091bc01c1_17",
+      "SourceNodeId": "node_1a091b85684_10",
+      "TargetNodeId": "node_1a091bbaa02_16",
+      "Relationship": "references"
+    }
+  ],
+  "node_projects": {
+    "node_1a091b83070_f": "proj_1a091ab846f_0",
+    "node_1a091bbaa02_16": "proj_1a091ab846f_0",
+    "node_1a091b93b1d_14": "proj_1a091ab846f_0",
+    "node_1a091b85684_10": "proj_1a091ab846f_0",
+    "node_1a091b8c4c5_12": "proj_1a091ab846f_0"
+  },
+  "edge_projects": {
+    "edge_1a091b8dddf_13": "proj_1a091ab846f_0",
+    "edge_1a091bb180d_15": "proj_1a091ab846f_0",
+    "edge_1a091bc01c1_17": "proj_1a091ab846f_0"
+  }
+}

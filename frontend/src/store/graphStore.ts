@@ -8,16 +8,21 @@ import type {
   NodeProperties,
   Project
 } from '../types/graph';
-import { getNodeTypes } from '../mock-api/nodeTypes';
-import { getGraph } from '../mock-api/graph';
-import { insertNode, updateNode, deleteNode } from '../mock-api/nodes';
-import { insertEdge, updateEdge, deleteEdge } from '../mock-api/edges';
-import { getValidRelationships, SemanticGraphError } from '../mock-api/relationships';
-import { createProject } from '../mock-api/projects';
+import {
+  api,
+  validateRelationship
+} from '../api/client';
+import { SemanticGraphError } from '../mock-api/relationships';
+
+// Local position cache to preserve canvas coordinates across graph re-fetches
+const nodePositionCache = new Map<string, { x: number; y: number }>();
 
 interface GraphStoreState {
-  // Core Graph State
+  // Project & Multi-project state
+  projects: Project[];
   projectId: string;
+
+  // Core Graph State
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
@@ -28,7 +33,10 @@ interface GraphStoreState {
   isLoading: boolean;
 
   // Actions
-  loadGraph: (projectId?: string) => Promise<void>;
+  loadProjects: () => Promise<Project[]>;
+  selectProject: (projectId: string) => Promise<void>;
+  createNewProject: (name: string, description?: string) => Promise<Project>;
+  loadGraph: (projectIdOverride?: string) => Promise<void>;
   loadNodeTypes: () => Promise<void>;
   addNode: (input: Omit<CreateNodeInput, 'projectId'>) => Promise<Node>;
   updateNodeProperties: (nodeId: string, properties: NodeProperties) => Promise<void>;
@@ -42,11 +50,11 @@ interface GraphStoreState {
   clearSelection: () => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   clearCanvas: () => void;
-  createNewProject: (name: string, description?: string) => Promise<Project>;
 }
 
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
-  projectId: 'default-pipeline',
+  projects: [],
+  projectId: '',
   nodes: [],
   edges: [],
   selectedNodeId: null,
@@ -54,9 +62,59 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   nodeCategories: [],
   isLoading: false,
 
+  loadProjects: async () => {
+    try {
+      const projects = await api.getProjects();
+      set({ projects });
+
+      // If no active project or active project not in list, pick the first or create a default
+      let currentId = get().projectId;
+      if (!currentId || !projects.some((p) => p.id === currentId)) {
+        if (projects.length > 0) {
+          currentId = projects[0].id;
+          set({ projectId: currentId });
+          await get().loadGraph(currentId);
+        } else {
+          const defaultProj = await api.createProject('Default Pipeline');
+          set({ projects: [defaultProj], projectId: defaultProj.id });
+          await get().loadGraph(defaultProj.id);
+        }
+      }
+
+      return projects;
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+      return [];
+    }
+  },
+
+  selectProject: async (projectId: string) => {
+    if (projectId === get().projectId) return;
+    set({ projectId, selectedNodeId: null, selectedEdgeId: null });
+    await get().loadGraph(projectId);
+  },
+
+  createNewProject: async (name: string) => {
+    try {
+      const newProj = await api.createProject(name);
+      set((state) => ({
+        projects: [...state.projects, newProj],
+        projectId: newProj.id,
+        nodes: [],
+        edges: [],
+        selectedNodeId: null,
+        selectedEdgeId: null
+      }));
+      return newProj;
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      throw error;
+    }
+  },
+
   loadNodeTypes: async () => {
     try {
-      const categories = await getNodeTypes();
+      const categories = await api.getNodeTypes();
       set({ nodeCategories: categories });
     } catch (error) {
       console.error('Failed to load node types:', error);
@@ -65,11 +123,20 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   loadGraph: async (projectIdOverride?: string) => {
     const pid = projectIdOverride || get().projectId;
+    if (!pid) return;
+
     set({ isLoading: true, projectId: pid });
     try {
-      const graph = await getGraph(pid);
+      const graph = await api.getGraph(pid);
+
+      // Hydrate with cached positions if available
+      const nodesWithPosition = graph.nodes.map((n) => ({
+        ...n,
+        position: nodePositionCache.get(n.id) || n.position
+      }));
+
       set({
-        nodes: graph.nodes,
+        nodes: nodesWithPosition,
         edges: graph.edges,
         isLoading: false
       });
@@ -80,17 +147,31 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   addNode: async (input) => {
+    const pid = get().projectId;
+    if (!pid) {
+      throw new Error('Cannot add node: No active project selected.');
+    }
+
     try {
-      const createdNode = await insertNode({
-        ...input,
-        projectId: get().projectId
-      });
+      const createdNode = await api.createNode(pid, input.categoryId, input.properties);
+
+      // Cache position if provided
+      if (input.position) {
+        nodePositionCache.set(createdNode.id, input.position);
+      }
+
+      const nodeWithPos: Node = {
+        ...createdNode,
+        position: input.position
+      };
+
       set((state) => ({
-        nodes: [...state.nodes, createdNode],
-        selectedNodeId: createdNode.id,
+        nodes: [...state.nodes, nodeWithPos],
+        selectedNodeId: nodeWithPos.id,
         selectedEdgeId: null
       }));
-      return createdNode;
+
+      return nodeWithPos;
     } catch (error) {
       console.error('Failed to insert node:', error);
       throw error;
@@ -98,6 +179,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   updateNodeProperties: async (nodeId: string, properties: NodeProperties) => {
+    const pid = get().projectId;
     // Optimistic local update
     set((state) => ({
       nodes: state.nodes.map((n) =>
@@ -106,15 +188,18 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
 
     try {
-      await updateNode(nodeId, properties, get().projectId);
+      await api.editNode(pid, nodeId, properties);
     } catch (error) {
       console.error('Failed to update node properties:', error);
     }
   },
 
   removeNode: async (nodeId: string) => {
+    const pid = get().projectId;
     try {
-      await deleteNode(nodeId, get().projectId);
+      await api.deleteNode(pid, nodeId);
+      nodePositionCache.delete(nodeId);
+
       set((state) => ({
         nodes: state.nodes.filter((n) => n.id !== nodeId),
         edges: state.edges.filter((e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId),
@@ -126,6 +211,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   addEdge: async (input) => {
+    const pid = get().projectId;
+    if (!pid) throw new Error('Cannot add edge: No active project.');
+
     const tempId = `edge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const optimisticEdge: Edge = {
       id: tempId,
@@ -134,7 +222,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       relationshipId: input.relationshipId
     };
 
-    // Immediate local update so the connection renders instantaneously with 0ms delay
+    // Immediate local update so the connection renders instantaneously
     set((state) => {
       const exists = state.edges.some(
         (e) =>
@@ -151,16 +239,21 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     });
 
     try {
-      const createdEdge = await insertEdge({
-        ...input,
-        projectId: get().projectId
-      });
+      const createdEdge = await api.createEdge(
+        pid,
+        input.sourceNodeId,
+        input.targetNodeId,
+        input.relationshipId
+      );
+
       set((state) => ({
         edges: state.edges.map((e) => (e.id === tempId ? createdEdge : e)),
         selectedEdgeId: createdEdge.id
       }));
+
       return createdEdge;
     } catch (error) {
+      // Revert optimistic edge on error
       set((state) => ({
         edges: state.edges.filter((e) => e.id !== tempId)
       }));
@@ -170,6 +263,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   updateEdgeRelationship: async (edgeId: string, relationshipId: string) => {
+    const pid = get().projectId;
     // Optimistic local update
     set((state) => ({
       edges: state.edges.map((e) =>
@@ -178,13 +272,14 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
 
     try {
-      await updateEdge(edgeId, relationshipId, get().projectId);
+      await api.editEdge(pid, edgeId, relationshipId);
     } catch (error) {
       console.error('Failed to update edge relationship:', error);
     }
   },
 
   reverseEdge: async (edgeId: string) => {
+    const pid = get().projectId;
     const edge = get().edges.find((e) => e.id === edgeId);
     if (!edge) return;
     const newSourceId = edge.targetNodeId;
@@ -196,8 +291,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     if (!sourceNode || !targetNode) return;
 
     // Validate if reversed direction has a valid rule
-    const valid = getValidRelationships(sourceNode.categoryId, targetNode.categoryId);
-    if (!valid.valid) {
+    const valid = await validateRelationship(sourceNode.categoryId, targetNode.categoryId);
+    if (!valid.valid || valid.allowedRelationshipIds.length === 0) {
       console.warn(
         `Cannot reverse edge: connection from "${sourceNode.categoryId}" to "${targetNode.categoryId}" is invalid.`
       );
@@ -207,7 +302,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       });
     }
 
-    const newRelId = valid.relationships[0].id;
+    const newRelId = valid.allowedRelationshipIds[0];
 
     // Optimistic update
     set((state) => ({
@@ -219,13 +314,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }));
 
     try {
-      await deleteEdge(edgeId);
-      const recreated = await insertEdge({
-        projectId: get().projectId,
-        sourceNodeId: newSourceId,
-        targetNodeId: newTargetId,
-        relationshipId: newRelId
-      });
+      await api.deleteEdge(pid, edgeId);
+      const recreated = await api.createEdge(pid, newSourceId, newTargetId, newRelId);
       set((state) => ({
         edges: state.edges.map((e) => (e.id === edgeId ? recreated : e)),
         selectedEdgeId: recreated.id
@@ -241,8 +331,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   removeEdge: async (edgeId: string) => {
+    const pid = get().projectId;
     try {
-      await deleteEdge(edgeId);
+      await api.deleteEdge(pid, edgeId);
       set((state) => ({
         edges: state.edges.filter((e) => e.id !== edgeId),
         selectedEdgeId: state.selectedEdgeId === edgeId ? null : state.selectedEdgeId
@@ -271,21 +362,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => {
+    nodePositionCache.set(nodeId, position);
     set((state) => ({
       nodes: state.nodes.map((n) => (n.id === nodeId ? { ...n, position } : n))
     }));
   },
 
-  clearCanvas: () => set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null }),
-  createNewProject: async (name: string, description?: string) => {
-    const project = await createProject({ name, description });
-    set({
-      projectId: project.id,
-      nodes: [],
-      edges: [],
-      selectedNodeId: null,
-      selectedEdgeId: null
-    });
-    return project;
+  clearCanvas: () => {
+    set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null });
   }
 }));
