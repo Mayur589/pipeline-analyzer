@@ -25,19 +25,31 @@ export async function insertNode(input: CreateNodeInput): Promise<Node> {
 export async function updateNode(
   nodeId: string,
   properties: NodeProperties,
-  projectId: string = 'default-pipeline'
+  projectId?: string
 ): Promise<Node> {
   // Simulate network roundtrip
   await new Promise((resolve) => setTimeout(resolve, 40));
 
-  const projectGraph = getOrCreateProjectGraph(projectId);
-  const targetNode = projectGraph.nodes.find((n) => n.id === nodeId);
+  let targetNode: Node | undefined;
+  if (projectId && mockDb.graphs[projectId]) {
+    targetNode = mockDb.graphs[projectId].nodes.find((n) => n.id === nodeId);
+  }
+
+  if (!targetNode) {
+    for (const pid of Object.keys(mockDb.graphs)) {
+      const n = mockDb.graphs[pid].nodes.find((node) => node.id === nodeId);
+      if (n) {
+        targetNode = n;
+        break;
+      }
+    }
+  }
 
   if (!targetNode) {
     throw new Error(`Node with id ${nodeId} not found`);
   }
 
-  targetNode.properties = properties;
+  targetNode.properties = { ...targetNode.properties, ...properties };
   return targetNode;
 }
 

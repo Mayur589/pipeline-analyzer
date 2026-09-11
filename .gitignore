@@ -6,6 +6,8 @@ dist/
 prj1_graph/
 prj1_graph
 API_ENDPOINTS.md
+API.md
+API_DOCS.md
 
 # Logs & OS
 *.log

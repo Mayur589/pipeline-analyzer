@@ -70,13 +70,28 @@ export async function insertEdge(input: CreateEdgeInput): Promise<Edge> {
 export async function updateEdge(
   edgeId: string,
   relationshipId: string,
-  projectId: string = 'default-pipeline'
+  projectId?: string
 ): Promise<Edge> {
   // Simulate network roundtrip
   await new Promise((resolve) => setTimeout(resolve, 40));
 
-  const projectGraph = getOrCreateProjectGraph(projectId);
-  const targetEdge = projectGraph.edges.find((e) => e.id === edgeId);
+  let targetEdge: Edge | undefined;
+  let activeProjectId = projectId;
+
+  if (projectId && mockDb.graphs[projectId]) {
+    targetEdge = mockDb.graphs[projectId].edges.find((e) => e.id === edgeId);
+  }
+
+  if (!targetEdge) {
+    for (const pid of Object.keys(mockDb.graphs)) {
+      const e = mockDb.graphs[pid].edges.find((edge) => edge.id === edgeId);
+      if (e) {
+        targetEdge = e;
+        activeProjectId = pid;
+        break;
+      }
+    }
+  }
 
   if (!targetEdge) {
     throw new SemanticGraphError({
@@ -85,8 +100,9 @@ export async function updateEdge(
     });
   }
 
-  const sourceNode = projectGraph.nodes.find((n) => n.id === targetEdge.sourceNodeId);
-  const targetNode = projectGraph.nodes.find((n) => n.id === targetEdge.targetNodeId);
+  const projectGraph = mockDb.graphs[activeProjectId || 'default-pipeline'];
+  const sourceNode = projectGraph?.nodes.find((n) => n.id === targetEdge!.sourceNodeId);
+  const targetNode = projectGraph?.nodes.find((n) => n.id === targetEdge!.targetNodeId);
 
   if (sourceNode && targetNode) {
     const valid = getValidRelationships(sourceNode.categoryId, targetNode.categoryId);
