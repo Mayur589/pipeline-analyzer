@@ -1,8 +1,14 @@
+pub mod database;
+
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::Path;
 use axum::extract::Query;
+use axum::extract::State;
 use serde::Deserialize;
 
+use crate::database::DatabaseStore;
 use crate::types::ApiError;
 use crate::types::Edge;
 use crate::types::Graph;
@@ -15,88 +21,122 @@ mod types;
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// Returns all node categories available to create nodes.
+#[derive(Clone)]
+pub struct AppState {
+    pub db: Arc<DatabaseStore>,
+}
+
+/// Returns all node categories supported by the API.
 ///
-/// The returned categories define the supported node types and their property
-/// field definitions.
-pub async fn get_node_categories() -> ApiResult<Vec<NodeCategory>> {
+/// Each category describes a valid node type and its available property
+/// definitions.
+pub async fn get_node_categories(State(state): State<AppState>) -> ApiResult<Vec<NodeCategory>> {
     todo!()
 }
 
 /// Returns all relationship types supported by the API.
-pub async fn get_relationships() -> ApiResult<Vec<String>> {
+pub async fn get_relationships(State(state): State<AppState>) -> ApiResult<Vec<String>> {
     todo!()
 }
 
-/// Returns all projects available to the caller.
-pub async fn get_projects() -> ApiResult<Vec<Project>> {
+/// Returns all projects currently stored in the database.
+pub async fn get_projects(State(state): State<AppState>) -> ApiResult<Vec<Project>> {
     todo!()
 }
 
-/// Returns the complete graph for the specified project.
+/// Returns the complete graph for a project, including its nodes and edges.
 ///
-/// Fails with `ApiError::ProjectNotFound` when the project does not exist.
-pub async fn get_graph(Path(project_id): Path<String>) -> ApiResult<Graph> {
+/// Returns `ApiError::ProjectNotFound` if the project does not exist.
+pub async fn get_graph(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> ApiResult<Graph> {
     todo!()
 }
 
-/// Validates whether a relationship is allowed between two node categories.
+/// Returns the relationship types allowed between two node categories.
 ///
-/// Returns the supported relationship types for the given source and target
-/// categories. Fails with `ApiError::InvalidCategoryConnection` when the
-/// category pair cannot be connected.
+/// Returns `ApiError::InvalidCategoryConnection` if the category pair cannot
+/// be connected by any supported relationship.
 pub async fn validate_relationship(
+    State(state): State<AppState>,
     Query(query): Query<ValidateRelationshipQuery>,
 ) -> ApiResult<Vec<String>> {
     todo!()
 }
 
-/// Creates a new project and returns the created project.
-pub async fn create_project(Json(project): Json<CreateProject>) -> ApiResult<Project> {
+/// Creates a new project and returns the persisted project.
+pub async fn create_project(
+    State(state): State<AppState>,
+    Json(project): Json<CreateProject>,
+) -> ApiResult<Project> {
     todo!()
 }
 
-/// Creates a node in the appropriate project context and returns the created node.
-pub async fn create_node(Json(node): Json<CreateNode>) -> ApiResult<Node> {
-    todo!()
-}
-
-/// Updates the properties of an existing node and returns the updated node.
+/// Creates a new node within the specified project and returns the persisted node.
 ///
-/// Fails with `ApiError::NodeNotFound` when the node does not exist.
-pub async fn edit_node(Path(node_id): Path<String>, Json(node): Json<EditNode>) -> ApiResult<Node> {
+/// Returns `ApiError::ProjectNotFound` if the project does not exist.
+pub async fn create_node(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(node): Json<CreateNode>,
+) -> ApiResult<Node> {
+    todo!()
+}
+
+/// Updates an existing node's properties and returns the updated node.
+///
+/// Returns `ApiError::NodeNotFound` if the node does not exist.
+pub async fn edit_node(
+    State(state): State<AppState>,
+    Path(node_id): Path<String>,
+    Json(node): Json<EditNode>,
+) -> ApiResult<Node> {
     todo!()
 }
 
 /// Deletes an existing node.
 ///
-/// Fails with `ApiError::NodeNotFound` when the node does not exist.
-pub async fn delete_node(Path(node_id): Path<String>) -> ApiResult<()> {
+/// Returns `ApiError::NodeNotFound` if the node does not exist.
+pub async fn delete_node(
+    State(state): State<AppState>,
+    Path(node_id): Path<String>,
+) -> ApiResult<()> {
     todo!()
 }
 
-/// Creates an edge between two existing nodes and returns the created edge.
+/// Creates an edge within the specified project and returns the persisted edge.
 ///
-/// Validates that the relationship is supported for the source and target
-/// node categories and that the edge does not already exist.
-pub async fn create_edge(Json(edge): Json<CreateEdge>) -> ApiResult<Edge> {
+/// The source and target nodes must exist, their category pair must support
+/// the requested relationship, and an equivalent edge must not already exist.
+///
+/// Returns an appropriate `ApiError` when these constraints are violated.
+pub async fn create_edge(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(edge): Json<CreateEdge>,
+) -> ApiResult<Edge> {
     todo!()
 }
 
 /// Updates the relationship of an existing edge and returns the updated edge.
 ///
-/// Fails with `ApiError::NodeNotFound` when the edge does not exist.
+/// Returns `ApiError::EdgeNotFound` if the edge does not exist.
 pub async fn edit_edge(
+    State(state): State<AppState>,
     Path(edge_id): Path<String>,
-    Json(edge): Json<CreateEdge>,
+    Json(edge): Json<EditEdge>,
 ) -> ApiResult<Edge> {
     todo!()
 }
 
 /// Deletes an existing edge.
 ///
-/// Fails with `ApiError::NodeNotFound` when the edge does not exist.
-pub async fn delete_edge(Path(edge_id): Path<String>) -> ApiResult<()> {
+/// Returns `ApiError::EdgeNotFound` if the edge does not exist.
+pub async fn delete_edge(
+    State(state): State<AppState>,
+    Path(edge_id): Path<String>,
+) -> ApiResult<()> {
     todo!()
 }
 

@@ -6,7 +6,7 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 use serde::Serialize;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PropertyField {
     String(String),
     Number(f64),
@@ -15,7 +15,7 @@ pub enum PropertyField {
 
 pub type NodeProperties = HashMap<String, PropertyField>;
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PropertyFieldDef {
     pub key: String,
@@ -24,21 +24,21 @@ pub struct PropertyFieldDef {
     pub default_value: Option<PropertyField>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct NodeCategory {
     pub id: String,
     pub field_defs: Vec<PropertyFieldDef>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Project {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Node {
     pub id: String,
@@ -46,7 +46,7 @@ pub struct Node {
     pub properties: NodeProperties,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Edge {
     pub id: String,
@@ -55,7 +55,7 @@ pub struct Edge {
     pub relationship: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Graph {
     pub project_id: String,
@@ -71,6 +71,7 @@ pub enum ApiError {
     InvalidRelationship,
     DuplicateEdge,
     NodeNotFound,
+    EdgeNotFound,
     ProjectNotFound,
 }
 
@@ -81,6 +82,7 @@ impl ApiError {
             Self::InvalidRelationship => StatusCode::BAD_REQUEST,
             Self::DuplicateEdge => StatusCode::CONFLICT,
             Self::NodeNotFound => StatusCode::NOT_FOUND,
+            Self::EdgeNotFound => StatusCode::NOT_FOUND,
             Self::ProjectNotFound => StatusCode::NOT_FOUND,
         }
     }
@@ -99,7 +101,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ErrorResponse {
     pub code: String,
     pub message: String,
