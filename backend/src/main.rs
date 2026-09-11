@@ -53,7 +53,7 @@ async fn main() {
         .with_state(state);
 
     let app = Router::new()
-        .nest("/", base_routes)
+        .merge(base_routes)
         .nest("/projects", project_routes);
 
     let listener = tokio::net::TcpListener::bind(ADDRESS).await.unwrap();
