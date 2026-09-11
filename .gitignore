@@ -12,3 +12,4 @@ API_DOCS.md
 # Logs & OS
 *.log
 .DS_Store
+db.json

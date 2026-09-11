@@ -66,9 +66,14 @@ export class ApiError extends Error {
 }
 
 export const getBaseUrl = (): string => {
-  const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
-  const procEnv = (globalThis as unknown as { process?: { env?: Record<string, string> } })?.process?.env;
-  return metaEnv?.VITE_API_BASE_URL || procEnv?.VITE_API_BASE_URL || 'http://127.0.0.1:3000';
+  if (typeof window !== 'undefined') {
+    // In browser: relative URLs delegate directly to Vite proxy to avoid CORS
+    const custom = (import.meta as any)?.env?.VITE_API_BASE_URL;
+    return custom !== undefined ? custom : '';
+  }
+  // In Node / CLI test runner
+  const proc = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
+  return 'http://127.0.0.1:3000';
 };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
