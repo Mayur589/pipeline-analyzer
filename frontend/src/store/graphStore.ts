@@ -12,27 +12,29 @@ import {
   api,
   validateRelationship
 } from '../api/client';
-import { SemanticGraphError } from '../mock-api/relationships';
 
-// Local position cache to preserve canvas coordinates across graph re-fetches
+// In-memory position cache to preserve coordinates across graph re-fetches
 const nodePositionCache = new Map<string, { x: number; y: number }>();
 
 interface GraphStoreState {
-  // Project & Multi-project state
+  // Projects state
   projects: Project[];
   projectId: string;
 
-  // Core Graph State
+  // Graph state
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   nodeCategories: NodeCategory[];
+  allRelationships: string[];
 
-  // UI States
+  // UI state
   isLoading: boolean;
+  error: string | null;
 
   // Actions
+  initialize: () => Promise<void>;
   loadProjects: () => Promise<Project[]>;
   selectProject: (projectId: string) => Promise<void>;
   createNewProject: (name: string, description?: string) => Promise<Project>;
@@ -45,6 +47,10 @@ interface GraphStoreState {
   updateEdgeRelationship: (edgeId: string, relationshipId: string) => Promise<void>;
   reverseEdge: (edgeId: string) => Promise<void>;
   removeEdge: (edgeId: string) => Promise<void>;
+  validateConnection: (
+    sourceCategoryId: string,
+    targetCategoryId: string
+  ) => Promise<{ valid: boolean; allowedRelationshipIds: string[] }>;
   selectNode: (nodeId: string | null) => void;
   selectEdge: (edgeId: string | null) => void;
   clearSelection: () => void;
@@ -60,14 +66,36 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   selectedNodeId: null,
   selectedEdgeId: null,
   nodeCategories: [],
+  allRelationships: [],
   isLoading: false,
+  error: null,
+
+  initialize: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      // Concurrently load node categories and relationships metadata
+      const [categories, relationships] = await Promise.all([
+        api.getNodeTypes(),
+        api.getRelationships()
+      ]);
+
+      set({ nodeCategories: categories, allRelationships: relationships });
+
+      // Load projects and active graph
+      await get().loadProjects();
+    } catch (err: any) {
+      console.error('Initialization failed:', err);
+      set({ error: err.message || 'Failed to initialize from backend.' });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
   loadProjects: async () => {
     try {
       const projects = await api.getProjects();
       set({ projects });
 
-      // If no active project or active project not in list, pick the first or create a default
       let currentId = get().projectId;
       if (!currentId || !projects.some((p) => p.id === currentId)) {
         if (projects.length > 0) {
@@ -75,15 +103,17 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
           set({ projectId: currentId });
           await get().loadGraph(currentId);
         } else {
-          const defaultProj = await api.createProject('Default Pipeline');
+          // If no projects exist on backend, create the initial default project
+          const defaultProj = await api.createProject('Default Security Pipeline');
           set({ projects: [defaultProj], projectId: defaultProj.id });
           await get().loadGraph(defaultProj.id);
         }
       }
 
       return projects;
-    } catch (error) {
-      console.error('Failed to load projects:', error);
+    } catch (error: any) {
+      console.error('Failed to load projects from backend:', error);
+      set({ error: error.message || 'Failed to load projects.' });
       return [];
     }
   },
@@ -95,6 +125,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   createNewProject: async (name: string) => {
+    set({ isLoading: true, error: null });
     try {
       const newProj = await api.createProject(name);
       set((state) => ({
@@ -103,11 +134,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         nodes: [],
         edges: [],
         selectedNodeId: null,
-        selectedEdgeId: null
+        selectedEdgeId: null,
+        isLoading: false
       }));
       return newProj;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create project:', error);
+      set({ error: error.message || 'Failed to create project.', isLoading: false });
       throw error;
     }
   },
@@ -116,8 +149,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     try {
       const categories = await api.getNodeTypes();
       set({ nodeCategories: categories });
-    } catch (error) {
-      console.error('Failed to load node types:', error);
+    } catch (error: any) {
+      console.error('Failed to load node types from backend:', error);
+      set({ error: error.message || 'Failed to load node types.' });
     }
   },
 
@@ -125,11 +159,11 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const pid = projectIdOverride || get().projectId;
     if (!pid) return;
 
-    set({ isLoading: true, projectId: pid });
+    set({ isLoading: true, projectId: pid, error: null });
     try {
       const graph = await api.getGraph(pid);
 
-      // Hydrate with cached positions if available
+      // Hydrate with in-memory cached positions if available
       const nodesWithPosition = graph.nodes.map((n) => ({
         ...n,
         position: nodePositionCache.get(n.id) || n.position
@@ -140,22 +174,19 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         edges: graph.edges,
         isLoading: false
       });
-    } catch (error) {
-      console.error('Failed to load graph:', error);
-      set({ isLoading: false });
+    } catch (error: any) {
+      console.error('Failed to load graph from backend:', error);
+      set({ isLoading: false, error: error.message || 'Failed to load graph.' });
     }
   },
 
   addNode: async (input) => {
     const pid = get().projectId;
-    if (!pid) {
-      throw new Error('Cannot add node: No active project selected.');
-    }
+    if (!pid) throw new Error('Cannot add node: No active project selected.');
 
     try {
       const createdNode = await api.createNode(pid, input.categoryId, input.properties);
 
-      // Cache position if provided
       if (input.position) {
         nodePositionCache.set(createdNode.id, input.position);
       }
@@ -173,14 +204,14 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
       return nodeWithPos;
     } catch (error) {
-      console.error('Failed to insert node:', error);
+      console.error('Failed to create node on backend:', error);
       throw error;
     }
   },
 
   updateNodeProperties: async (nodeId: string, properties: NodeProperties) => {
     const pid = get().projectId;
-    // Optimistic local update
+    // Optimistic update for zero-latency UI
     set((state) => ({
       nodes: state.nodes.map((n) =>
         n.id === nodeId ? { ...n, properties: { ...properties } } : n
@@ -190,7 +221,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     try {
       await api.editNode(pid, nodeId, properties);
     } catch (error) {
-      console.error('Failed to update node properties:', error);
+      console.error('Failed to update node properties on backend:', error);
     }
   },
 
@@ -206,7 +237,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId
       }));
     } catch (error) {
-      console.error('Failed to delete node:', error);
+      console.error('Failed to delete node on backend:', error);
     }
   },
 
@@ -222,7 +253,6 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       relationshipId: input.relationshipId
     };
 
-    // Immediate local update so the connection renders instantaneously
     set((state) => {
       const exists = state.edges.some(
         (e) =>
@@ -253,18 +283,16 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
       return createdEdge;
     } catch (error) {
-      // Revert optimistic edge on error
       set((state) => ({
         edges: state.edges.filter((e) => e.id !== tempId)
       }));
-      console.error('Failed to insert edge:', error);
+      console.error('Failed to insert edge on backend:', error);
       throw error;
     }
   },
 
   updateEdgeRelationship: async (edgeId: string, relationshipId: string) => {
     const pid = get().projectId;
-    // Optimistic local update
     set((state) => ({
       edges: state.edges.map((e) =>
         e.id === edgeId ? { ...e, relationshipId } : e
@@ -274,7 +302,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     try {
       await api.editEdge(pid, edgeId, relationshipId);
     } catch (error) {
-      console.error('Failed to update edge relationship:', error);
+      console.error('Failed to update edge relationship on backend:', error);
     }
   },
 
@@ -290,16 +318,12 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
     if (!sourceNode || !targetNode) return;
 
-    // Validate if reversed direction has a valid rule
+    // Validate if reversed direction is valid on backend
     const valid = await validateRelationship(sourceNode.categoryId, targetNode.categoryId);
     if (!valid.valid || valid.allowedRelationshipIds.length === 0) {
-      console.warn(
-        `Cannot reverse edge: connection from "${sourceNode.categoryId}" to "${targetNode.categoryId}" is invalid.`
+      throw new Error(
+        `Cannot reverse direction: category "${sourceNode.categoryId}" cannot connect to "${targetNode.categoryId}".`
       );
-      throw new SemanticGraphError({
-        code: 'INVALID_CATEGORY_CONNECTION',
-        message: `Cannot reverse direction: category "${sourceNode.categoryId}" cannot connect to "${targetNode.categoryId}".`
-      });
     }
 
     const newRelId = valid.allowedRelationshipIds[0];
@@ -339,8 +363,12 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         selectedEdgeId: state.selectedEdgeId === edgeId ? null : state.selectedEdgeId
       }));
     } catch (error) {
-      console.error('Failed to delete edge:', error);
+      console.error('Failed to delete edge on backend:', error);
     }
+  },
+
+  validateConnection: async (sourceCategoryId: string, targetCategoryId: string) => {
+    return validateRelationship(sourceCategoryId, targetCategoryId);
   },
 
   selectNode: (nodeId: string | null) => {

@@ -12,12 +12,12 @@ import type {
 } from '../types/graph';
 import { getProperty, createDefaultProperties } from '../types/graph';
 import {
-  RELATIONSHIPS_BY_ID,
-  getValidRelationships,
   getRelationshipColor,
-  getRelationshipGroupInfo
-} from '../mock-api/relationships';
-import type { RelationshipDefinition } from '../mock-api/relationships';
+  getRelationshipGroupInfo,
+  formatRelationshipLabel
+} from '../types/graph';
+import type { RelationshipDefinition } from '../types/graph';
+import { validateRelationship } from '../api/client';
 import {
   Maximize2,
   RefreshCw,
@@ -138,8 +138,7 @@ export const Prj1GraphCanvas: React.FC = () => {
     });
 
     const gEdges: GraphEdge[] = edges.map((e) => {
-      const relDef = RELATIONSHIPS_BY_ID[e.relationshipId];
-      const label = relDef?.label || e.relationshipId;
+      const label = formatRelationshipLabel(e.relationshipId);
       const color = getRelationshipColor(e.relationshipId);
 
       return {
@@ -175,47 +174,60 @@ export const Prj1GraphCanvas: React.FC = () => {
     }, 4500);
   }, []);
 
+  const [validationCache, setValidationCache] = useState<Map<string, boolean>>(new Map());
+
   const handleAttemptConnect = useCallback(
-    (sourceId: string, targetId: string) => {
+    async (sourceId: string, targetId: string) => {
       const src = nodes.find((n) => n.id === sourceId);
       const tgt = nodes.find((n) => n.id === targetId);
       if (!src || !tgt) return;
 
-      const valid = getValidRelationships(src.categoryId, tgt.categoryId);
+      try {
+        const valid = await validateRelationship(src.categoryId, tgt.categoryId);
 
-      if (!valid.valid || valid.relationships.length === 0) {
-        const srcCat = nodeCategories.find((c) => c.id === src.categoryId)?.category || src.categoryId;
-        const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.category || tgt.categoryId;
-        showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`);
-        setConnectSourceId(null);
-        setContextMenu(null);
-        return;
-      }
-
-      if (valid.relationships.length === 1) {
-        // Automatically connect if exactly 1 valid relationship
-        callbacksRef.current.addEdge({
-          sourceNodeId: sourceId,
-          targetNodeId: targetId,
-          relationshipId: valid.relationships[0].id
-        });
-        setConnectSourceId(null);
-        setContextMenu(null);
-        if (workerRef.current) {
-          workerRef.current.postMessage({ type: 'reheat' });
+        if (!valid.valid || valid.allowedRelationshipIds.length === 0) {
+          const srcCat = nodeCategories.find((c) => c.id === src.categoryId)?.category || src.categoryId;
+          const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.category || tgt.categoryId;
+          showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`);
+          setConnectSourceId(null);
+          setContextMenu(null);
+          return;
         }
-        return;
-      }
 
-      // Multiple valid relationships: show picker modal
-      setConnectSourceId(null);
-      setContextMenu(null);
-      setRelationshipPicker({
-        sourceNode: src,
-        targetNode: tgt,
-        options: valid.relationships,
-        selectedId: valid.relationships[0].id
-      });
+        const options: RelationshipDefinition[] = valid.allowedRelationshipIds.map((id) => ({
+          id,
+          label: formatRelationshipLabel(id)
+        }));
+
+        if (options.length === 1) {
+          // Automatically connect if exactly 1 valid relationship
+          callbacksRef.current.addEdge({
+            sourceNodeId: sourceId,
+            targetNodeId: targetId,
+            relationshipId: options[0].id
+          });
+          setConnectSourceId(null);
+          setContextMenu(null);
+          if (workerRef.current) {
+            workerRef.current.postMessage({ type: 'reheat' });
+          }
+          return;
+        }
+
+        // Multiple valid relationships: show picker modal
+        setConnectSourceId(null);
+        setContextMenu(null);
+        setRelationshipPicker({
+          sourceNode: src,
+          targetNode: tgt,
+          options,
+          selectedId: options[0].id
+        });
+      } catch (err: any) {
+        showToast(err.message || 'Failed to validate connection.');
+        setConnectSourceId(null);
+        setContextMenu(null);
+      }
     },
     [nodes, nodeCategories, showToast]
   );
@@ -230,10 +242,22 @@ export const Prj1GraphCanvas: React.FC = () => {
       const src = nodes.find((n) => n.id === sourceId);
       const tgt = nodes.find((n) => n.id === targetId);
       if (!src || !tgt) return { valid: false, count: 0 };
-      const valid = getValidRelationships(src.categoryId, tgt.categoryId);
-      return { valid: valid.valid, count: valid.relationships.length };
+      const cacheKey = `${src.categoryId}->${tgt.categoryId}`;
+      if (validationCache.has(cacheKey)) {
+        const isValid = validationCache.get(cacheKey)!;
+        return { valid: isValid, count: isValid ? 1 : 0 };
+      }
+      // Populate cache asynchronously
+      validateRelationship(src.categoryId, tgt.categoryId)
+        .then((res) => {
+          setValidationCache((prev) => new Map(prev).set(cacheKey, res.valid));
+        })
+        .catch(console.error);
+
+      // Default to allowed during drag until backend check resolves
+      return { valid: true, count: 1 };
     },
-    [nodes]
+    [nodes, validationCache]
   );
 
   const validateConnectionRef = useRef(validateConnectionFn);

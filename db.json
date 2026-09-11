@@ -1,0 +1,35 @@
+{
+  "projects": [
+    {
+      "Id": "proj_1a0920d46b0_0",
+      "Name": "Default Security Pipeline"
+    }
+  ],
+  "nodes": [
+    {
+      "Id": "node_1a0920d6c3b_1",
+      "CategoryId": "build_environment",
+      "Properties": {
+        "isolationLevel": "Hermetic Container",
+        "ephemeral": true,
+        "name": "Isolated-Runner-Cluster-01",
+        "baseImage": "cgr.dev/chainguard/node:latest"
+      }
+    },
+    {
+      "Id": "node_1a0920d71ec_2",
+      "CategoryId": "secrets_credentials",
+      "Properties": {
+        "name": "Cosign-KMS-Signer-Key",
+        "vaultType": "OIDC Short-Lived Token",
+        "autoRevoke": true
+      }
+    }
+  ],
+  "edges": [],
+  "node_projects": {
+    "node_1a0920d6c3b_1": "proj_1a0920d46b0_0",
+    "node_1a0920d71ec_2": "proj_1a0920d46b0_0"
+  },
+  "edge_projects": {}
+}

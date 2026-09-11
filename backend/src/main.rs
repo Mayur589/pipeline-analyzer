@@ -18,6 +18,8 @@ use backend::get_node_categories;
 use backend::get_projects;
 use backend::get_relationships;
 use backend::validate_relationship;
+use tower_http::cors::Any;
+use tower_http::cors::CorsLayer;
 
 const ADDRESS: &str = "127.0.0.1:3000";
 
@@ -48,6 +50,12 @@ async fn main() {
     let app = Router::new()
         .merge(base_routes)
         .nest("/projects", project_routes)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(ADDRESS)

@@ -74,22 +74,45 @@ export interface Graph {
   edges: Edge[];
 }
 
-export type {
-  RelationshipDefinition,
-  RelationshipRule,
-  RelationshipErrorCode,
-  RelationshipErrorPayload
-} from '../mock-api/relationships';
-export {
-  SemanticGraphError,
-  RELATIONSHIP_DEFINITIONS,
-  RELATIONSHIPS_BY_ID,
-  RELATIONSHIP_RULES,
-  getValidRelationships,
-  getRelationships,
-  getRelationshipColor,
-  getRelationshipGroupInfo
-} from '../mock-api/relationships';
+export interface RelationshipDefinition {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+/**
+ * Format any relationship or category ID into human-readable Title Case
+ * e.g. "contributes_to" -> "Contributes To", "identity_people" -> "Identity People"
+ */
+export function formatRelationshipLabel(id: string): string {
+  if (!id) return '';
+  return id
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Generate a consistent, vibrant HSL color for any string ID dynamically.
+ * Zero hardcoded color tables or dictionaries.
+ */
+export function getRelationshipColor(id: string): string {
+  if (!id) return '#06b6d4';
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 55%)`;
+}
+
+export function getRelationshipGroupInfo(relationshipId: string) {
+  return {
+    group: relationshipId,
+    color: getRelationshipColor(relationshipId),
+    label: formatRelationshipLabel(relationshipId)
+  };
+}
 
 // Engine types from prj1_graph
 export type CustomNodeType = 'document' | 'image' | 'task' | 'code' | 'entity' | 'custom';
@@ -204,18 +227,20 @@ export function propertiesToObject(
   return { ...properties };
 }
 
-// Centralized generator for category default properties
+// Centralized generator for category default properties dynamically using backend field definitions
 export function createDefaultProperties(category: NodeCategory): NodeProperties {
   const props: NodeProperties = {};
 
   const fields = category.fieldDefs || [];
   fields.forEach((fieldDef) => {
-    if (fieldDef.defaultValue !== undefined) {
+    if (fieldDef.defaultValue !== undefined && fieldDef.defaultValue !== null) {
       props[fieldDef.key] = fieldDef.defaultValue;
     } else if (fieldDef.key === 'name') {
       props[fieldDef.key] = category.label || category.category || 'Node';
     } else if (fieldDef.type === 'checkbox') {
       props[fieldDef.key] = true;
+    } else if (fieldDef.options && fieldDef.options.length > 0) {
+      props[fieldDef.key] = fieldDef.options[0];
     } else {
       props[fieldDef.key] = `${category.label || category.category || ''} Config`;
     }

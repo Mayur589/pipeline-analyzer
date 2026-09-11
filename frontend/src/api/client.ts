@@ -7,63 +7,7 @@ import type {
   Edge,
   NodeProperties
 } from '../types/graph';
-
-/**
- * Category UI presentation metadata (colors, friendly labels, descriptions).
- * The dynamic field definitions themselves are loaded directly from GET /node-types.
- */
-const CATEGORY_UI_METADATA: Record<string, { label: string; description: string; color: string }> = {
-  identity_people: {
-    label: 'Identity & People',
-    description: 'Developers, admins, service accounts, and IAM roles accessing the pipeline.',
-    color: '#0ea5e9'
-  },
-  source_control: {
-    label: 'Source Control',
-    description: 'Repositories, version control systems, and code review governance.',
-    color: '#6366f1'
-  },
-  dependencies: {
-    label: 'Dependencies',
-    description: 'Third-party open-source libraries, vendored code, and software packages.',
-    color: '#f59e0b'
-  },
-  build_environment: {
-    label: 'Build Environment',
-    description: 'Compilers, build workers, sandboxes, and base OS container images.',
-    color: '#ec4899'
-  },
-  cicd_pipeline: {
-    label: 'CI/CD Pipeline',
-    description: 'Workflows, orchestration engines, automated test suites, and gates.',
-    color: '#14b8a6'
-  },
-  secrets_credentials: {
-    label: 'Secrets & Credentials',
-    description: 'API keys, signing certificates, deployment tokens, and KMS keys.',
-    color: '#eab308'
-  },
-  artifact_storage: {
-    label: 'Artifact Storage',
-    description: 'Container registries, package managers, and signed binary stores.',
-    color: '#8b5cf6'
-  },
-  distribution: {
-    label: 'Distribution',
-    description: 'CDNs, package repositories, app stores, and customer release channels.',
-    color: '#10b981'
-  },
-  runtime_environment: {
-    label: 'Runtime Environment',
-    description: 'Kubernetes clusters, serverless platforms, cloud VMs, and production nodes.',
-    color: '#06b6d4'
-  },
-  monitoring_response: {
-    label: 'Monitoring & Response',
-    description: 'SIEM platforms, audit loggers, runtime guards, and anomaly detection.',
-    color: '#f43f5e'
-  }
-};
+import { getRelationshipColor } from '../types/graph.ts';
 
 /**
  * Backend Data Transfer Object (DTO) types matching Rust Axum serializers
@@ -122,14 +66,9 @@ export class ApiError extends Error {
 }
 
 export const getBaseUrl = (): string => {
-  if (typeof window !== 'undefined') {
-    // In browser: relative URLs delegate directly to Vite proxy to avoid CORS
-    const custom = (import.meta as any)?.env?.VITE_API_BASE_URL;
-    return custom !== undefined ? custom : '';
-  }
-  // In Node / CLI test runner
-  const proc = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
-  return proc?.env?.API_BASE_URL || 'http://127.0.0.1:3000';
+  const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
+  const procEnv = (globalThis as unknown as { process?: { env?: Record<string, string> } })?.process?.env;
+  return metaEnv?.VITE_API_BASE_URL || procEnv?.VITE_API_BASE_URL || 'http://127.0.0.1:3000';
 };
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -168,22 +107,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // -------------------------------------------------------------
-// 1. Metadata Endpoints
+// 1. Metadata Endpoints (Dynamic, Zero Hardcoded Domain Logic)
 // -------------------------------------------------------------
 
 /**
  * GET /node-types
- * Returns all node categories and dynamic field definitions.
+ * Returns all node categories and dynamic field definitions directly from the backend.
  */
 export async function getNodeTypes(): Promise<NodeCategory[]> {
   const data = await request<BackendNodeCategory[]>('/node-types', { method: 'GET' });
 
   return data.map((cat) => {
-    const meta = CATEGORY_UI_METADATA[cat.Id] || {
-      label: cat.Id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-      description: `Category for ${cat.Id}`,
-      color: '#0ea5e9'
-    };
+    const label = cat.Id
+      .replace(/_/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const color = getRelationshipColor(cat.Id);
 
     const fieldDefs: PropertyFieldDef[] = (cat.FieldDefs || []).map((f) => {
       let fieldType: PropertyFieldDef['type'] = 'text';
@@ -201,10 +141,10 @@ export async function getNodeTypes(): Promise<NodeCategory[]> {
 
     return {
       id: cat.Id,
-      category: meta.label,
-      label: meta.label,
-      description: meta.description,
-      color: meta.color,
+      category: label,
+      label,
+      description: `${label} component`,
+      color,
       fieldDefs,
       defaultProperties: fieldDefs.map((f) => f.key)
     };
@@ -213,7 +153,7 @@ export async function getNodeTypes(): Promise<NodeCategory[]> {
 
 /**
  * GET /relationships
- * Returns the list of all supported relationship string IDs.
+ * Returns the list of all supported relationship string IDs directly from backend.
  */
 export async function getRelationships(): Promise<string[]> {
   return request<string[]>('/relationships', { method: 'GET' });
@@ -221,7 +161,7 @@ export async function getRelationships(): Promise<string[]> {
 
 /**
  * GET /relationships/validate
- * Validates connection between sourceCategory and targetCategory.
+ * Validates connection between sourceCategory and targetCategory via backend.
  */
 export async function validateRelationship(
   sourceCategory: string,

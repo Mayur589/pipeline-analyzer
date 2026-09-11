@@ -12,6 +12,9 @@ import {
   Loader2
 } from 'lucide-react';
 
+import { createDefaultProperties } from '../types/graph';
+import { validateRelationship } from '../api/client';
+
 export const Header: React.FC = () => {
   const {
     nodes,
@@ -25,7 +28,8 @@ export const Header: React.FC = () => {
     projects,
     selectProject,
     createNewProject,
-    isLoading
+    isLoading,
+    nodeCategories
   } = useGraphStore();
 
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
@@ -112,80 +116,60 @@ export const Header: React.FC = () => {
       }
       clearCanvas();
 
-      // 1. Identity
-      const devTeam = await addNode({
-        categoryId: 'identity_people',
-        properties: { name: 'Core Dev Team', role: 'Maintainer', mfaEnabled: true, accessLevel: 'Write' },
-        position: { x: 100, y: 220 }
-      });
+      // Dynamically generate a node for each category retrieved from backend
+      const createdNodes: Record<string, any> = {};
+      const positions: Record<string, { x: number; y: number }> = {
+        identity_people: { x: 100, y: 220 },
+        source_control: { x: 340, y: 140 },
+        dependencies: { x: 340, y: 380 },
+        secrets_credentials: { x: 580, y: 60 },
+        cicd_pipeline: { x: 580, y: 220 },
+        build_environment: { x: 820, y: 220 },
+        artifact_storage: { x: 1060, y: 220 },
+        runtime_environment: { x: 1300, y: 220 },
+        monitoring_response: { x: 700, y: 440 }
+      };
 
-      // 2. Source Control
-      const githubRepo = await addNode({
-        categoryId: 'source_control',
-        properties: { name: 'org/payments-service', visibility: 'Private', branchProtection: true },
-        position: { x: 340, y: 140 }
-      });
+      for (let i = 0; i < nodeCategories.length; i++) {
+        const cat = nodeCategories[i];
+        const defaultProps = createDefaultProperties(cat);
+        const pos = positions[cat.id] || { x: 150 + (i % 4) * 250, y: 100 + Math.floor(i / 4) * 180 };
+        const node = await addNode({
+          categoryId: cat.id,
+          properties: defaultProps,
+          position: pos
+        });
+        createdNodes[cat.id] = node;
+      }
 
-      // 3. Dependencies
-      const npmDeps = await addNode({
-        categoryId: 'dependencies',
-        properties: { name: 'npm-dependencies', packageManager: 'npm / yarn / pnpm', vulnerabilityScanning: true },
-        position: { x: 340, y: 380 }
-      });
+      // Connect candidate pairs strictly validated by the backend
+      const candidatePairs: [string, string][] = [
+        ['identity_people', 'source_control'],
+        ['source_control', 'cicd_pipeline'],
+        ['source_control', 'build_environment'],
+        ['secrets_credentials', 'cicd_pipeline'],
+        ['cicd_pipeline', 'build_environment'],
+        ['dependencies', 'build_environment'],
+        ['build_environment', 'artifact_storage'],
+        ['artifact_storage', 'runtime_environment'],
+        ['runtime_environment', 'monitoring_response'],
+        ['monitoring_response', 'identity_people']
+      ];
 
-      // 4. Secrets
-      const vaultKms = await addNode({
-        categoryId: 'secrets_credentials',
-        properties: { name: 'KMS Signer Key', vaultType: 'OIDC Short-Lived Token', autoRevoke: true },
-        position: { x: 580, y: 60 }
-      });
-
-      // 5. CI/CD
-      const cicd = await addNode({
-        categoryId: 'cicd_pipeline',
-        properties: { name: 'Prod Release Pipeline', runnerType: 'GitHub Actions (Self-Hosted)', approvalRequired: true },
-        position: { x: 580, y: 220 }
-      });
-
-      // 6. Build Environment
-      const buildWorker = await addNode({
-        categoryId: 'build_environment',
-        properties: { name: 'Hermetic Builder Node', isolationLevel: 'Hermetic Container', ephemeral: true },
-        position: { x: 820, y: 220 }
-      });
-
-      // 7. Artifact Storage
-      const ociRegistry = await addNode({
-        categoryId: 'artifact_storage',
-        properties: { name: 'Harbor OCI Registry', registryType: 'Harbor OCI Registry', immutableTags: true, signatureVerification: true },
-        position: { x: 1060, y: 220 }
-      });
-
-      // 8. Runtime
-      const k8sCluster = await addNode({
-        categoryId: 'runtime_environment',
-        properties: { name: 'Production EKS Cluster', environmentType: 'Production', enforceZeroTrust: true },
-        position: { x: 1300, y: 220 }
-      });
-
-      // 9. Monitoring
-      const falcoAudit = await addNode({
-        categoryId: 'monitoring_response',
-        properties: { name: 'Falco Threat Guard', siemIntegration: 'Falco + Splunk', alertThreshold: 'All Anomalies (Zero-Tolerance)' },
-        position: { x: 700, y: 440 }
-      });
-
-      // Connect them with strictly valid semantic relationships
-      await addEdge({ sourceNodeId: devTeam.id, targetNodeId: githubRepo.id, relationshipId: 'contributes_to' });
-      await addEdge({ sourceNodeId: githubRepo.id, targetNodeId: cicd.id, relationshipId: 'triggers' });
-      await addEdge({ sourceNodeId: githubRepo.id, targetNodeId: buildWorker.id, relationshipId: 'provides_source' });
-      await addEdge({ sourceNodeId: vaultKms.id, targetNodeId: cicd.id, relationshipId: 'authenticates' });
-      await addEdge({ sourceNodeId: cicd.id, targetNodeId: buildWorker.id, relationshipId: 'executes' });
-      await addEdge({ sourceNodeId: npmDeps.id, targetNodeId: buildWorker.id, relationshipId: 'consumed_by' });
-      await addEdge({ sourceNodeId: buildWorker.id, targetNodeId: ociRegistry.id, relationshipId: 'produces' });
-      await addEdge({ sourceNodeId: ociRegistry.id, targetNodeId: k8sCluster.id, relationshipId: 'provides' });
-      await addEdge({ sourceNodeId: k8sCluster.id, targetNodeId: falcoAudit.id, relationshipId: 'monitored_by' });
-      await addEdge({ sourceNodeId: falcoAudit.id, targetNodeId: devTeam.id, relationshipId: 'alerts' });
+      for (const [srcCat, tgtCat] of candidatePairs) {
+        const srcNode = createdNodes[srcCat];
+        const tgtNode = createdNodes[tgtCat];
+        if (srcNode && tgtNode) {
+          const val = await validateRelationship(srcCat, tgtCat);
+          if (val.valid && val.allowedRelationshipIds.length > 0) {
+            await addEdge({
+              sourceNodeId: srcNode.id,
+              targetNodeId: tgtNode.id,
+              relationshipId: val.allowedRelationshipIds[0]
+            });
+          }
+        }
+      }
     } catch (e) {
       console.error('Failed to load sample pipeline:', e);
     } finally {
