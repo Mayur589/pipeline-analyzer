@@ -5,8 +5,6 @@ use axum::routing::get;
 use axum::routing::patch;
 use axum::routing::post;
 use backend::AppState;
-use backend::EditEdge;
-use backend::EditNode;
 use backend::create_edge;
 use backend::create_node;
 use backend::create_project;
@@ -23,36 +21,6 @@ use backend::validate_relationship;
 
 const ADDRESS: &str = "127.0.0.1:3000";
 
-async fn edit_node_scoped(
-    state: axum::extract::State<AppState>,
-    axum::extract::Path((_project_id, node_id)): axum::extract::Path<(String, String)>,
-    body: axum::Json<EditNode>,
-) -> impl axum::response::IntoResponse {
-    edit_node(state, axum::extract::Path(node_id), body).await
-}
-
-async fn delete_node_scoped(
-    state: axum::extract::State<AppState>,
-    axum::extract::Path((_project_id, node_id)): axum::extract::Path<(String, String)>,
-) -> impl axum::response::IntoResponse {
-    delete_node(state, axum::extract::Path(node_id)).await
-}
-
-async fn edit_edge_scoped(
-    state: axum::extract::State<AppState>,
-    axum::extract::Path((_project_id, edge_id)): axum::extract::Path<(String, String)>,
-    body: axum::Json<EditEdge>,
-) -> impl axum::response::IntoResponse {
-    edit_edge(state, axum::extract::Path(edge_id), body).await
-}
-
-async fn delete_edge_scoped(
-    state: axum::extract::State<AppState>,
-    axum::extract::Path((_project_id, edge_id)): axum::extract::Path<(String, String)>,
-) -> impl axum::response::IntoResponse {
-    delete_edge(state, axum::extract::Path(edge_id)).await
-}
-
 #[tokio::main]
 async fn main() {
     let state = AppState {
@@ -68,28 +36,18 @@ async fn main() {
         .route("/relationships", get(get_relationships))
         .route("/relationships/validate", get(validate_relationship));
 
+    #[rustfmt::skip]
     let project_routes = Router::new()
-        .route("/projects", get(get_projects).post(create_project))
-        .route("/projects/{project_id}/graph", get(get_graph))
-        .route("/projects/{project_id}/nodes", post(create_node))
-        .route(
-            "/projects/{project_id}/nodes/{node_id}",
-            patch(edit_node_scoped).delete(delete_node_scoped),
-        )
-        .route("/projects/{project_id}/edges", post(create_edge))
-        .route(
-            "/projects/{project_id}/edges/{edge_id}",
-            patch(edit_edge_scoped).delete(delete_edge_scoped),
-        );
-
-    let direct_routes = Router::new()
-        .route("/nodes/{node_id}", patch(edit_node).delete(delete_node))
-        .route("/edges/{edge_id}", patch(edit_edge).delete(delete_edge));
+        .route("/", get(get_projects).post(create_project))
+        .route("/{project_id}/graph", get(get_graph))
+        .route("/{project_id}/nodes", post(create_node))
+        .route("/{project_id}/nodes/{node_id}", patch(edit_node).delete(delete_node))
+        .route("/{project_id}/edges", post(create_edge))
+        .route("/{project_id}/edges/{edge_id}", patch(edit_edge).delete(delete_edge));
 
     let app = Router::new()
         .merge(base_routes)
-        .merge(project_routes)
-        .merge(direct_routes)
+        .nest("/projects", project_routes)
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(ADDRESS)

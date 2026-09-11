@@ -14,6 +14,7 @@ use axum::extract::Query;
 use axum::extract::State;
 use serde::Deserialize;
 
+use crate::database::Database;
 use crate::database::DatabaseStore;
 use crate::types::ApiError;
 use crate::types::Edge;
@@ -37,6 +38,37 @@ fn generate_id(prefix: &str) -> String {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis());
     format!("{prefix}_{timestamp:x}_{count:x}")
+}
+
+/// Returns whether `project_id` exists in the database.
+fn project_exists(db: &Database, project_id: &str) -> bool {
+    db.projects.iter().any(|p| p.id == project_id)
+}
+
+/// Returns whether `node_id` belongs to `project_id`.
+///
+/// Falls back to the single existing project when no per-project tracking
+/// exists, which accommodates databases created before node tracking.
+fn node_in_project(db: &Database, node_id: &str, project_id: &str) -> bool {
+    db.node_projects
+        .get(node_id)
+        .is_some_and(|project| project == project_id)
+        || (db.node_projects.is_empty()
+            && db.projects.len() == 1
+            && db.projects[0].id == project_id)
+}
+
+/// Returns whether `edge_id` belongs to `project_id`.
+///
+/// Falls back to the single existing project when no per-project tracking
+/// exists, which accommodates databases created before edge tracking.
+fn edge_in_project(db: &Database, edge_id: &str, project_id: &str) -> bool {
+    db.edge_projects
+        .get(edge_id)
+        .is_some_and(|project| project == project_id)
+        || (db.edge_projects.is_empty()
+            && db.projects.len() == 1
+            && db.projects[0].id == project_id)
 }
 
 /// Returns all node categories supported by the API.
@@ -82,35 +114,21 @@ pub async fn get_graph(
     Path(project_id): Path<String>,
 ) -> ApiResult<Graph> {
     let db = state.db.read().await;
-    if !db.projects.iter().any(|p| p.id == project_id) {
+    if !project_exists(&db, &project_id) {
         return Err(ApiError::ProjectNotFound);
     }
 
     let nodes: Vec<Node> = db
         .nodes
         .iter()
-        .filter(|n| {
-            db.node_projects
-                .get(&n.id)
-                .is_some_and(|p| p == &project_id)
-                || (db.node_projects.is_empty()
-                    && db.projects.len() == 1
-                    && db.projects[0].id == project_id)
-        })
+        .filter(|n| node_in_project(&db, &n.id, &project_id))
         .cloned()
         .collect();
 
     let edges: Vec<Edge> = db
         .edges
         .iter()
-        .filter(|e| {
-            db.edge_projects
-                .get(&e.id)
-                .is_some_and(|p| p == &project_id)
-                || (db.edge_projects.is_empty()
-                    && db.projects.len() == 1
-                    && db.projects[0].id == project_id)
-        })
+        .filter(|e| edge_in_project(&db, &e.id, &project_id))
         .cloned()
         .collect();
 
@@ -205,18 +223,27 @@ pub async fn create_node(
 ///
 /// # Errors
 ///
-/// Returns [`ApiError::NodeNotFound`] if the node does not exist.
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist, or
+/// [`ApiError::NodeNotFound`] if the node does not exist within the project.
 pub async fn edit_node(
     State(state): State<AppState>,
-    Path(node_id): Path<String>,
+    Path((project_id, node_id)): Path<(String, String)>,
     Json(node): Json<EditNode>,
 ) -> ApiResult<Node> {
+    {
+        let db = state.db.read().await;
+        if !project_exists(&db, &project_id) {
+            return Err(ApiError::ProjectNotFound);
+        }
+    }
+
     let mut updated = None;
 
     let _ = state
         .db
         .update(|db| {
-            if let Some(existing) = db.nodes.iter_mut().find(|n| n.id == node_id) {
+            let in_project = node_in_project(db, &node_id, &project_id);
+            if in_project && let Some(existing) = db.nodes.iter_mut().find(|n| n.id == node_id) {
                 existing.properties = node.properties;
                 updated = Some(existing.clone());
             }
@@ -230,17 +257,26 @@ pub async fn edit_node(
 ///
 /// # Errors
 ///
-/// Returns [`ApiError::NodeNotFound`] if the node does not exist.
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist, or
+/// [`ApiError::NodeNotFound`] if the node does not exist within the project.
 pub async fn delete_node(
     State(state): State<AppState>,
-    Path(node_id): Path<String>,
+    Path((project_id, node_id)): Path<(String, String)>,
 ) -> ApiResult<()> {
+    {
+        let db = state.db.read().await;
+        if !project_exists(&db, &project_id) {
+            return Err(ApiError::ProjectNotFound);
+        }
+    }
+
     let mut found = false;
 
     let _ = state
         .db
         .update(|db| {
-            if let Some(pos) = db.nodes.iter().position(|n| n.id == node_id) {
+            let in_project = node_in_project(db, &node_id, &project_id);
+            if in_project && let Some(pos) = db.nodes.iter().position(|n| n.id == node_id) {
                 db.nodes.remove(pos);
                 db.node_projects.remove(&node_id);
                 found = true;
@@ -353,21 +389,26 @@ pub async fn create_edge(
 ///
 /// # Errors
 ///
-/// Returns [`ApiError::EdgeNotFound`] if the edge does not exist,
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist,
+/// [`ApiError::EdgeNotFound`] if the edge does not exist within the project,
 /// [`ApiError::NodeNotFound`] if either connected node does not exist,
 /// [`ApiError::InvalidCategoryConnection`] if the category pair cannot be connected, or
 /// [`ApiError::InvalidRelationship`] if the relationship is not permitted.
 pub async fn edit_edge(
     State(state): State<AppState>,
-    Path(edge_id): Path<String>,
+    Path((project_id, edge_id)): Path<(String, String)>,
     Json(edge): Json<EditEdge>,
 ) -> ApiResult<Edge> {
     let (source_cat, target_cat) = {
         let db = state.db.read().await;
+        if !project_exists(&db, &project_id) {
+            return Err(ApiError::ProjectNotFound);
+        }
+
         let existing_edge = db
             .edges
             .iter()
-            .find(|e| e.id == edge_id)
+            .find(|e| e.id == edge_id && edge_in_project(&db, &e.id, &project_id))
             .ok_or(ApiError::EdgeNotFound)?;
 
         let source_node = db
@@ -413,17 +454,26 @@ pub async fn edit_edge(
 ///
 /// # Errors
 ///
-/// Returns [`ApiError::EdgeNotFound`] if the edge does not exist.
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist, or
+/// [`ApiError::EdgeNotFound`] if the edge does not exist within the project.
 pub async fn delete_edge(
     State(state): State<AppState>,
-    Path(edge_id): Path<String>,
+    Path((project_id, edge_id)): Path<(String, String)>,
 ) -> ApiResult<()> {
+    {
+        let db = state.db.read().await;
+        if !project_exists(&db, &project_id) {
+            return Err(ApiError::ProjectNotFound);
+        }
+    }
+
     let mut found = false;
 
     let _ = state
         .db
         .update(|db| {
-            if let Some(pos) = db.edges.iter().position(|e| e.id == edge_id) {
+            let in_project = edge_in_project(db, &edge_id, &project_id);
+            if in_project && let Some(pos) = db.edges.iter().position(|e| e.id == edge_id) {
                 db.edges.remove(pos);
                 db.edge_projects.remove(&edge_id);
                 found = true;

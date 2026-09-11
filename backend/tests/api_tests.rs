@@ -135,6 +135,15 @@ async fn test_node_crud_and_errors() {
     .await
     .expect("project creation should succeed");
 
+    let Json(other_proj) = create_project(
+        State(state.clone()),
+        Json(CreateProject {
+            name: String::from("Other Project"),
+        }),
+    )
+    .await
+    .expect("second project creation should succeed");
+
     let mut props = HashMap::new();
     props.insert(
         String::from("name"),
@@ -142,7 +151,7 @@ async fn test_node_crud_and_errors() {
     );
     let Json(node) = create_node(
         State(state.clone()),
-        Path(proj.id),
+        Path(proj.id.clone()),
         Json(CreateNode {
             category_id: String::from("source_control"),
             properties: props,
@@ -159,7 +168,7 @@ async fn test_node_crud_and_errors() {
     );
     let Json(edited_node) = edit_node(
         State(state.clone()),
-        Path(node.id.clone()),
+        Path((proj.id.clone(), node.id.clone())),
         Json(EditNode {
             properties: updated_props.clone(),
         }),
@@ -170,21 +179,67 @@ async fn test_node_crud_and_errors() {
 
     let edit_node_err = edit_node(
         State(state.clone()),
-        Path(String::from("invalid_id")),
+        Path((proj.id.clone(), String::from("invalid_id"))),
         Json(EditNode {
-            properties: updated_props,
+            properties: updated_props.clone(),
         }),
     )
     .await
     .expect_err("nonexistent node edit should fail");
     assert!(matches!(edit_node_err, ApiError::NodeNotFound));
 
-    let Json(()) = delete_node(State(state), Path(node.id))
+    let cross_project_node_err = edit_node(
+        State(state.clone()),
+        Path((other_proj.id.clone(), node.id.clone())),
+        Json(EditNode {
+            properties: updated_props.clone(),
+        }),
+    )
+    .await
+    .expect_err("node edit outside its project should fail");
+    assert!(matches!(cross_project_node_err, ApiError::NodeNotFound));
+
+    let missing_project_node_err = edit_node(
+        State(state.clone()),
+        Path((String::from("missing_project"), node.id.clone())),
+        Json(EditNode {
+            properties: HashMap::new(),
+        }),
+    )
+    .await
+    .expect_err("node edit in a missing project should fail");
+    assert!(matches!(
+        missing_project_node_err,
+        ApiError::ProjectNotFound
+    ));
+
+    let delete_cross_project_err =
+        delete_node(State(state.clone()), Path((other_proj.id, node.id.clone())))
+            .await
+            .expect_err("node delete outside its project should fail");
+    assert!(matches!(delete_cross_project_err, ApiError::NodeNotFound));
+
+    let delete_missing_project_err = delete_node(
+        State(state.clone()),
+        Path((String::from("missing_project"), node.id.clone())),
+    )
+    .await
+    .expect_err("node delete in a missing project should fail");
+    assert!(matches!(
+        delete_missing_project_err,
+        ApiError::ProjectNotFound
+    ));
+
+    let Json(()) = delete_node(State(state), Path((proj.id, node.id)))
         .await
         .expect("delete node should succeed");
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "single test covers full edge lifecycle"
+)]
 async fn test_edge_crud_validation_and_cascade() {
     let state = setup_test_state().await;
 
@@ -196,6 +251,15 @@ async fn test_edge_crud_validation_and_cascade() {
     )
     .await
     .expect("project creation should succeed");
+
+    let Json(other_proj) = create_project(
+        State(state.clone()),
+        Json(CreateProject {
+            name: String::from("Other Project"),
+        }),
+    )
+    .await
+    .expect("second project creation should succeed");
 
     let Json(node1) = create_node(
         State(state.clone()),
@@ -266,7 +330,7 @@ async fn test_edge_crud_validation_and_cascade() {
 
     let Json(edited_edge) = edit_edge(
         State(state.clone()),
-        Path(edge.id.clone()),
+        Path((proj.id.clone(), edge.id.clone())),
         Json(EditEdge {
             relationship: String::from("triggers"),
         }),
@@ -275,17 +339,39 @@ async fn test_edge_crud_validation_and_cascade() {
     .expect("edit edge should succeed");
     assert_eq!(edited_edge.id, edge.id);
 
-    let Json(()) = delete_node(State(state.clone()), Path(node1.id))
+    let cross_project_edge_err = edit_edge(
+        State(state.clone()),
+        Path((other_proj.id.clone(), edge.id.clone())),
+        Json(EditEdge {
+            relationship: String::from("triggers"),
+        }),
+    )
+    .await
+    .expect_err("edge edit outside its project should fail");
+    assert!(matches!(cross_project_edge_err, ApiError::EdgeNotFound));
+
+    let missing_project_edge_err = delete_edge(
+        State(state.clone()),
+        Path((String::from("missing_project"), edge.id.clone())),
+    )
+    .await
+    .expect_err("edge delete in a missing project should fail");
+    assert!(matches!(
+        missing_project_edge_err,
+        ApiError::ProjectNotFound
+    ));
+
+    let Json(()) = delete_node(State(state.clone()), Path((proj.id.clone(), node1.id)))
         .await
         .expect("delete node should succeed");
 
-    let Json(final_graph) = get_graph(State(state.clone()), Path(proj.id))
+    let Json(final_graph) = get_graph(State(state.clone()), Path(proj.id.clone()))
         .await
         .expect("final graph should succeed");
     assert_eq!(final_graph.nodes.len(), 1);
     assert_eq!(final_graph.edges.len(), 0);
 
-    let delete_err = delete_edge(State(state), Path(edge.id))
+    let delete_err = delete_edge(State(state), Path((proj.id, edge.id)))
         .await
         .expect_err("deleting already cascaded edge should 404");
     assert!(matches!(delete_err, ApiError::EdgeNotFound));
