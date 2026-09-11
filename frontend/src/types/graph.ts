@@ -38,14 +38,14 @@ export interface CreateEdgeInput {
   projectId: string;
   sourceNodeId: string;
   targetNodeId: string;
-  relationship: string;
+  relationshipId: string;
 }
 
 export interface Edge {
   id: string;
   sourceNodeId: string;
   targetNodeId: string;
-  relationship: string;
+  relationshipId: string;
 }
 
 export interface Graph {
@@ -53,6 +53,23 @@ export interface Graph {
   nodes: Node[];
   edges: Edge[];
 }
+
+export type {
+  RelationshipDefinition,
+  RelationshipRule,
+  RelationshipErrorCode,
+  RelationshipErrorPayload
+} from '../mock-api/relationships';
+export {
+  SemanticGraphError,
+  RELATIONSHIP_DEFINITIONS,
+  RELATIONSHIPS_BY_ID,
+  RELATIONSHIP_RULES,
+  getValidRelationships,
+  getRelationships,
+  getRelationshipColor,
+  getRelationshipGroupInfo
+} from '../mock-api/relationships';
 
 // Engine types from prj1_graph
 export type CustomNodeType = 'document' | 'image' | 'task' | 'code' | 'entity' | 'custom';

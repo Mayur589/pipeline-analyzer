@@ -7,9 +7,17 @@ import type {
   GraphEdge,
   PhysicsConfig,
   DisplayConfig,
-  FilterConfig
+  FilterConfig,
+  Node
 } from '../types/graph';
 import { getProperty, createDefaultProperties } from '../types/graph';
+import {
+  RELATIONSHIPS_BY_ID,
+  getValidRelationships,
+  getRelationshipColor,
+  getRelationshipGroupInfo
+} from '../mock-api/relationships';
+import type { RelationshipDefinition } from '../mock-api/relationships';
 import {
   Maximize2,
   RefreshCw,
@@ -23,7 +31,9 @@ import {
   Search,
   Trash2,
   Palette,
-  ImageOff
+  ImageOff,
+  AlertTriangle,
+  Check
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
@@ -126,17 +136,112 @@ export const Prj1GraphCanvas: React.FC = () => {
       };
     });
 
-    const gEdges: GraphEdge[] = edges.map((e) => ({
-      id: e.id,
-      source: e.sourceNodeId,
-      target: e.targetNodeId,
-      label: e.relationship,
-      type: 'default',
-      color: '#94a3b8'
-    }));
+    const gEdges: GraphEdge[] = edges.map((e) => {
+      const relDef = RELATIONSHIPS_BY_ID[e.relationshipId];
+      const label = relDef?.label || e.relationshipId;
+      const color = getRelationshipColor(e.relationshipId);
+
+      return {
+        id: e.id,
+        source: e.sourceNodeId,
+        target: e.targetNodeId,
+        label,
+        type: 'directional',
+        weight: 1.5,
+        color
+      };
+    });
 
     return { graphNodes: gNodes, graphEdges: gEdges };
   }, [nodes, edges, nodeCategories]);
+
+  // Semantic Connection Picker & Toast State
+  const [relationshipPicker, setRelationshipPicker] = useState<{
+    sourceNode: Node;
+    targetNode: Node;
+    options: RelationshipDefinition[];
+    selectedId: string;
+  } | null>(null);
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimerRef = useRef<any>(null);
+
+  const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(msg);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  }, []);
+
+  const handleAttemptConnect = useCallback(
+    (sourceId: string, targetId: string) => {
+      const src = nodes.find((n) => n.id === sourceId);
+      const tgt = nodes.find((n) => n.id === targetId);
+      if (!src || !tgt) return;
+
+      const valid = getValidRelationships(src.categoryId, tgt.categoryId);
+
+      if (!valid.valid || valid.relationships.length === 0) {
+        const srcCat = nodeCategories.find((c) => c.id === src.categoryId)?.category || src.categoryId;
+        const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.category || tgt.categoryId;
+        showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`);
+        setConnectSourceId(null);
+        setContextMenu(null);
+        return;
+      }
+
+      if (valid.relationships.length === 1) {
+        // Automatically connect if exactly 1 valid relationship
+        callbacksRef.current.addEdge({
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          relationshipId: valid.relationships[0].id
+        });
+        setConnectSourceId(null);
+        setContextMenu(null);
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'reheat' });
+        }
+        return;
+      }
+
+      // Multiple valid relationships: show picker modal
+      setConnectSourceId(null);
+      setContextMenu(null);
+      setRelationshipPicker({
+        sourceNode: src,
+        targetNode: tgt,
+        options: valid.relationships,
+        selectedId: valid.relationships[0].id
+      });
+    },
+    [nodes, nodeCategories, showToast]
+  );
+
+  const handleAttemptConnectRef = useRef(handleAttemptConnect);
+  useEffect(() => {
+    handleAttemptConnectRef.current = handleAttemptConnect;
+  }, [handleAttemptConnect]);
+
+  const validateConnectionFn = useCallback(
+    (sourceId: string, targetId: string) => {
+      const src = nodes.find((n) => n.id === sourceId);
+      const tgt = nodes.find((n) => n.id === targetId);
+      if (!src || !tgt) return { valid: false, count: 0 };
+      const valid = getValidRelationships(src.categoryId, tgt.categoryId);
+      return { valid: valid.valid, count: valid.relationships.length };
+    },
+    [nodes]
+  );
+
+  const validateConnectionRef = useRef(validateConnectionFn);
+  useEffect(() => {
+    validateConnectionRef.current = validateConnectionFn;
+    if (engineRef.current) {
+      engineRef.current.setValidateConnection(validateConnectionFn);
+    }
+  }, [validateConnectionFn]);
 
   // Keep latest callbacks in ref to avoid re-initializing engine
   const callbacksRef = useRef({
@@ -206,16 +311,10 @@ export const Prj1GraphCanvas: React.FC = () => {
       },
       onHoverNode: (id) => setHoveredNodeId(id),
       onConnectNodes: (sourceId, targetId) => {
-        callbacksRef.current.addEdge({
-          sourceNodeId: sourceId,
-          targetNodeId: targetId,
-          relationship: 'relates to'
-        });
-        setConnectSourceId(null);
-        setContextMenu(null);
-        if (workerRef.current) {
-          workerRef.current.postMessage({ type: 'reheat' });
-        }
+        handleAttemptConnectRef.current(sourceId, targetId);
+      },
+      validateConnection: (sourceId, targetId) => {
+        return validateConnectionRef.current(sourceId, targetId);
       },
       onConnectCancel: () => {
         setConnectSourceId(null);
@@ -395,16 +494,7 @@ export const Prj1GraphCanvas: React.FC = () => {
             {connectSourceId && connectSourceId !== contextMenu.nodeId ? (
               <button
                 onClick={() => {
-                  callbacksRef.current.addEdge({
-                    sourceNodeId: connectSourceId,
-                    targetNodeId: contextMenu.nodeId,
-                    relationship: 'relates to'
-                  });
-                  setConnectSourceId(null);
-                  setContextMenu(null);
-                  if (workerRef.current) {
-                    workerRef.current.postMessage({ type: 'reheat' });
-                  }
+                  handleAttemptConnect(connectSourceId, contextMenu.nodeId);
                 }}
                 className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all font-semibold group text-left cursor-pointer"
               >
@@ -803,6 +893,119 @@ export const Prj1GraphCanvas: React.FC = () => {
             </label>
           </div>
         </aside>
+      )}
+
+      {/* Relationship Selection Modal for multiple valid relationships */}
+      {relationshipPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setRelationshipPicker(null)}
+        >
+          <div
+            className="w-full max-w-md bg-[#0F172A] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-100">Choose Relationship</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Select semantic connection from{' '}
+                  <span className="text-cyan-300 font-medium">
+                    {getProperty(relationshipPicker.sourceNode.properties, 'name') || relationshipPicker.sourceNode.id}
+                  </span>{' '}
+                  to{' '}
+                  <span className="text-cyan-300 font-medium">
+                    {getProperty(relationshipPicker.targetNode.properties, 'name') || relationshipPicker.targetNode.id}
+                  </span>
+                </p>
+              </div>
+              <button
+                onClick={() => setRelationshipPicker(null)}
+                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 max-h-[320px] overflow-y-auto custom-scrollbar pr-1">
+              {relationshipPicker.options.map((opt) => {
+                const isSelected = relationshipPicker.selectedId === opt.id;
+                const group = getRelationshipGroupInfo(opt.id);
+                return (
+                  <div
+                    key={opt.id}
+                    onClick={() =>
+                      setRelationshipPicker({ ...relationshipPicker, selectedId: opt.id })
+                    }
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-cyan-500/10 border-cyan-500/50 shadow-lg shadow-cyan-500/10'
+                        : 'bg-white/[0.02] border-white/5 hover:border-white/20 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: group.color }}
+                        />
+                        <span className="text-xs font-semibold text-slate-200">{opt.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-white/5 text-slate-400">
+                          {group.group}
+                        </span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                      {opt.description}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/10">
+              <button
+                onClick={() => setRelationshipPicker(null)}
+                className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  callbacksRef.current.addEdge({
+                    sourceNodeId: relationshipPicker.sourceNode.id,
+                    targetNodeId: relationshipPicker.targetNode.id,
+                    relationshipId: relationshipPicker.selectedId
+                  });
+                  setRelationshipPicker(null);
+                  if (workerRef.current) {
+                    workerRef.current.postMessage({ type: 'reheat' });
+                  }
+                }}
+                className="px-4 py-2 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
+              >
+                Create Relationship
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Semantic Rejection Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs shadow-2xl backdrop-blur-md animate-slide-up">
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{toastMessage}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="ml-2 text-rose-400 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       )}
     </div>
   );

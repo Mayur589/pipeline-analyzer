@@ -47,6 +47,7 @@ export class GraphEngine {
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
   private onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
+  private validateConnection?: (sourceId: string, targetId: string) => { valid: boolean; count: number };
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -57,6 +58,7 @@ export class GraphEngine {
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
       onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
+      validateConnection?: (sourceId: string, targetId: string) => { valid: boolean; count: number };
     }
   ) {
     this.canvas = canvas;
@@ -67,9 +69,14 @@ export class GraphEngine {
     this.onConnectNodes = options.onConnectNodes;
     this.onConnectCancel = options.onConnectCancel;
     this.onNodeContextMenu = options.onNodeContextMenu;
+    this.validateConnection = options.validateConnection;
 
     this.setupEvents();
     this.centerCamera();
+  }
+
+  public setValidateConnection(fn?: (sourceId: string, targetId: string) => { valid: boolean; count: number }) {
+    this.validateConnection = fn;
   }
 
   public setConnectingSource(nodeId: string | null) {
@@ -744,9 +751,18 @@ export class GraphEngine {
       const isHovered = node.id === this.hoveredNodeId;
       const isNeighbor = activeNeighbors.has(node.id);
 
-      const isDimmed =
+      let isDimmed =
         (this.displayConfig.dimNonNeighbors && activeFocusId && !isNeighbor) ||
         (hasSearch && !this.searchResults.has(node.id));
+
+      if (this.connectingSourceId) {
+        if (node.id === this.connectingSourceId) {
+          isDimmed = false;
+        } else if (this.validateConnection) {
+          const check = this.validateConnection(this.connectingSourceId, node.id);
+          isDimmed = !check.valid;
+        }
+      }
 
       drawNode(
         this.ctx,
@@ -757,6 +773,22 @@ export class GraphEngine {
         this.displayConfig,
         () => this.draw()
       );
+
+      // If connecting and this is a valid target, draw a soft green guide ring
+      if (this.connectingSourceId && node.id !== this.connectingSourceId && this.validateConnection) {
+        const check = this.validateConnection(this.connectingSourceId, node.id);
+        if (check.valid) {
+          const r = ((node.size || 20) * this.displayConfig.nodeScale) + 4;
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, Math.PI * 2);
+          this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
+          this.ctx.lineWidth = 1.5;
+          this.ctx.setLineDash([4, 4]);
+          this.ctx.stroke();
+          this.ctx.restore();
+        }
+      }
     });
 
     // Dynamic Connection Rubberband Preview
@@ -779,9 +811,19 @@ export class GraphEngine {
             ? (hitTarget.y ?? this.mouseWorldPos.y)
             : this.mouseWorldPos.y;
 
+        let targetValidation = { valid: true, count: 1 };
+        if (hitTarget && hitTarget.id !== this.connectingSourceId && this.validateConnection) {
+          targetValidation = this.validateConnection(this.connectingSourceId, hitTarget.id);
+        }
+
+        const isHitValid = targetValidation.valid;
+        const strokeColor = hitTarget
+          ? (isHitValid ? '#10b981' : '#ef4444')
+          : '#06b6d4';
+
         this.ctx.save();
         // Guideline dashed line
-        this.ctx.strokeStyle = hitTarget ? '#22d3ee' : '#06b6d4';
+        this.ctx.strokeStyle = strokeColor;
         this.ctx.lineWidth = hitTarget ? 2.5 : 2;
         this.ctx.setLineDash([6, 4]);
         this.ctx.beginPath();
@@ -799,17 +841,37 @@ export class GraphEngine {
         this.ctx.setLineDash([]);
         this.ctx.stroke();
 
-        // Target hover highlight ring + soft cyan glow
+        // Target hover highlight ring + semantic feedback
         if (hitTarget && hitTarget.id !== this.connectingSourceId) {
           const tgtRadius = ((hitTarget.size || 20) * this.displayConfig.nodeScale) + 8;
           this.ctx.beginPath();
           this.ctx.arc(hitTarget.x ?? 0, hitTarget.y ?? 0, tgtRadius, 0, Math.PI * 2);
-          this.ctx.strokeStyle = '#22d3ee';
+          this.ctx.strokeStyle = strokeColor;
           this.ctx.lineWidth = 2.5;
           this.ctx.stroke();
 
-          this.ctx.fillStyle = 'rgba(34, 211, 238, 0.2)';
+          this.ctx.fillStyle = isHitValid ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)';
           this.ctx.fill();
+
+          // Status badge pill above target node
+          const badgeText = isHitValid
+            ? (targetValidation.count > 1 ? `✓ Valid (${targetValidation.count} options)` : '✓ Valid')
+            : '✕ Invalid Connection';
+          this.ctx.font = 'bold 10px monospace';
+          const textWidth = this.ctx.measureText(badgeText).width;
+          const badgeX = (hitTarget.x ?? 0) - textWidth / 2 - 8;
+          const badgeY = (hitTarget.y ?? 0) - tgtRadius - 16;
+
+          this.ctx.fillStyle = isHitValid ? 'rgba(6, 78, 59, 0.9)' : 'rgba(127, 29, 29, 0.9)';
+          this.ctx.beginPath();
+          this.ctx.roundRect(badgeX, badgeY, textWidth + 16, 18, 4);
+          this.ctx.fill();
+          this.ctx.strokeStyle = strokeColor;
+          this.ctx.lineWidth = 1;
+          this.ctx.stroke();
+
+          this.ctx.fillStyle = '#ffffff';
+          this.ctx.fillText(badgeText, badgeX + 8, badgeY + 12);
         }
 
         this.ctx.restore();

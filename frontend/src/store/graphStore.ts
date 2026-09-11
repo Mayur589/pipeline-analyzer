@@ -10,6 +10,7 @@ import { getNodeTypes } from '../mock-api/nodeTypes';
 import { getGraph } from '../mock-api/graph';
 import { insertNode, updateNode, deleteNode } from '../mock-api/nodes';
 import { insertEdge, updateEdge, deleteEdge } from '../mock-api/edges';
+import { getValidRelationships, SemanticGraphError } from '../mock-api/relationships';
 
 interface GraphStoreState {
   // Core Graph State
@@ -30,7 +31,7 @@ interface GraphStoreState {
   updateNodeProperties: (nodeId: string, properties: Record<string, any>) => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   addEdge: (input: Omit<CreateEdgeInput, 'projectId'>) => Promise<Edge>;
-  updateEdgeRelationship: (edgeId: string, relationship: string) => Promise<void>;
+  updateEdgeRelationship: (edgeId: string, relationshipId: string) => Promise<void>;
   reverseEdge: (edgeId: string) => Promise<void>;
   removeEdge: (edgeId: string) => Promise<void>;
   selectNode: (nodeId: string | null) => void;
@@ -126,7 +127,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       id: tempId,
       sourceNodeId: input.sourceNodeId,
       targetNodeId: input.targetNodeId,
-      relationship: input.relationship || 'relates to'
+      relationshipId: input.relationshipId
     };
 
     // Immediate local update so the connection renders instantaneously with 0ms delay
@@ -164,16 +165,16 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }
   },
 
-  updateEdgeRelationship: async (edgeId: string, relationship: string) => {
+  updateEdgeRelationship: async (edgeId: string, relationshipId: string) => {
     // Optimistic local update
     set((state) => ({
       edges: state.edges.map((e) =>
-        e.id === edgeId ? { ...e, relationship } : e
+        e.id === edgeId ? { ...e, relationshipId } : e
       )
     }));
 
     try {
-      await updateEdge(edgeId, relationship, get().projectId);
+      await updateEdge(edgeId, relationshipId, get().projectId);
     } catch (error) {
       console.error('Failed to update edge relationship:', error);
     }
@@ -182,14 +183,57 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   reverseEdge: async (edgeId: string) => {
     const edge = get().edges.find((e) => e.id === edgeId);
     if (!edge) return;
-    const newSource = edge.targetNodeId;
-    const newTarget = edge.sourceNodeId;
+    const newSourceId = edge.targetNodeId;
+    const newTargetId = edge.sourceNodeId;
 
+    const sourceNode = get().nodes.find((n) => n.id === newSourceId);
+    const targetNode = get().nodes.find((n) => n.id === newTargetId);
+
+    if (!sourceNode || !targetNode) return;
+
+    // Validate if reversed direction has a valid rule
+    const valid = getValidRelationships(sourceNode.categoryId, targetNode.categoryId);
+    if (!valid.valid) {
+      console.warn(
+        `Cannot reverse edge: connection from "${sourceNode.categoryId}" to "${targetNode.categoryId}" is invalid.`
+      );
+      throw new SemanticGraphError({
+        code: 'INVALID_CATEGORY_CONNECTION',
+        message: `Cannot reverse direction: category "${sourceNode.categoryId}" cannot connect to "${targetNode.categoryId}".`
+      });
+    }
+
+    const newRelId = valid.relationships[0].id;
+
+    // Optimistic update
     set((state) => ({
       edges: state.edges.map((e) =>
-        e.id === edgeId ? { ...e, sourceNodeId: newSource, targetNodeId: newTarget } : e
+        e.id === edgeId
+          ? { ...e, sourceNodeId: newSourceId, targetNodeId: newTargetId, relationshipId: newRelId }
+          : e
       )
     }));
+
+    try {
+      await deleteEdge(edgeId);
+      const recreated = await insertEdge({
+        projectId: get().projectId,
+        sourceNodeId: newSourceId,
+        targetNodeId: newTargetId,
+        relationshipId: newRelId
+      });
+      set((state) => ({
+        edges: state.edges.map((e) => (e.id === edgeId ? recreated : e)),
+        selectedEdgeId: recreated.id
+      }));
+    } catch (error) {
+      console.error('Failed to reverse edge on backend:', error);
+      // Revert on error
+      set((state) => ({
+        edges: state.edges.map((e) => (e.id === edgeId ? edge : e))
+      }));
+      throw error;
+    }
   },
 
   removeEdge: async (edgeId: string) => {

@@ -7,6 +7,7 @@ import type { Settings } from 'sigma/settings';
 import type { NodeLabelDrawingFunction, NodeHoverDrawingFunction } from 'sigma/rendering';
 import { useGraphStore } from '../store/graphStore';
 import { getProperty, createDefaultProperties } from '../types/graph';
+import { RELATIONSHIPS_BY_ID, getRelationshipColor, getValidRelationships } from '../mock-api/relationships';
 import { Maximize2, RefreshCw, ZoomIn, ZoomOut, Link2 } from 'lucide-react';
 
 // Convert hex color to rgba with specific alpha
@@ -231,18 +232,23 @@ const SigmaGraphController: React.FC<ControllerProps> = ({
         return;
       }
 
+      const relDef = RELATIONSHIPS_BY_ID[e.relationshipId];
+      const label = relDef?.label || e.relationshipId;
+      const relColor = getRelationshipColor(e.relationshipId);
+
       if (graph.hasEdge(e.id)) {
-        if (graph.getEdgeAttribute(e.id, 'relationship') !== e.relationship) {
-          graph.setEdgeAttribute(e.id, 'relationship', e.relationship);
-          graph.setEdgeAttribute(e.id, 'label', e.relationship);
+        if (graph.getEdgeAttribute(e.id, 'relationshipId') !== e.relationshipId) {
+          graph.setEdgeAttribute(e.id, 'relationshipId', e.relationshipId);
+          graph.setEdgeAttribute(e.id, 'label', label);
+          graph.setEdgeAttribute(e.id, 'color', hexToRgba(relColor, 0.45));
         }
       } else {
         graph.addEdgeWithKey(e.id, e.sourceNodeId, e.targetNodeId, {
-          relationship: e.relationship || 'relates to',
-          label: e.relationship || 'relates to',
+          relationshipId: e.relationshipId,
+          label: label,
           type: 'curve',
           size: 1.0,
-          color: 'rgba(148, 163, 184, 0.28)'
+          color: hexToRgba(relColor, 0.45)
         });
         hasGraphStructureChanged = true;
       }
@@ -425,11 +431,18 @@ const SigmaGraphController: React.FC<ControllerProps> = ({
         if ((e.event.original.shiftKey || connectSourceId) && (connectSourceId || selectedNodeId)) {
           const sourceId = connectSourceId || selectedNodeId;
           if (sourceId && sourceId !== e.node) {
-            addEdge({
-              sourceNodeId: sourceId,
-              targetNodeId: e.node,
-              relationship: 'relates to'
-            });
+            const srcNode = nodes.find((n) => n.id === sourceId);
+            const tgtNode = nodes.find((n) => n.id === e.node);
+            if (srcNode && tgtNode) {
+              const valid = getValidRelationships(srcNode.categoryId, tgtNode.categoryId);
+              if (valid.valid && valid.relationships.length > 0) {
+                addEdge({
+                  sourceNodeId: sourceId,
+                  targetNodeId: e.node,
+                  relationshipId: valid.relationships[0].id
+                });
+              }
+            }
             setConnectSourceId(null);
             return;
           }
@@ -480,7 +493,8 @@ const SigmaGraphController: React.FC<ControllerProps> = ({
     connectSourceId,
     selectedNodeId,
     setConnectSourceId,
-    setHoveredNode
+    setHoveredNode,
+    nodes
   ]);
 
   return null;

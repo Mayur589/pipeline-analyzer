@@ -2,20 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
 import type { Node, Edge, NodeCategory } from '../types/graph';
 import { getProperty, propertiesToObject } from '../types/graph';
-import { ArrowRight, X, Link2, Edit2, ImageOff, ArrowLeftRight } from 'lucide-react';
-
-const RELATIONSHIP_PRESETS = [
-  'Injects credentials into',
-  'Triggers build in',
-  'Pulls dependency into',
-  'Publishes artifact to',
-  'Deploys container to',
-  'Monitors telemetry from',
-  'Enforces branch policy on',
-  'Signs artifact with',
-  'Authenticates via OIDC',
-  'relates to'
-];
+import {
+  RELATIONSHIPS_BY_ID,
+  getValidRelationships,
+  getRelationshipColor,
+  getRelationshipGroupInfo
+} from '../mock-api/relationships';
+import { ArrowRight, X, Link2, ImageOff, ArrowLeftRight } from 'lucide-react';
 
 interface NodeInspectorProps {
   node: Node;
@@ -43,13 +36,25 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
   const nodeEdges = edges.filter((e) => e.sourceNodeId === node.id || e.targetNodeId === node.id);
   const otherNodes = nodes.filter((n) => n.id !== node.id);
 
+  // Only permit connections where the rule matrix permits valid relationships
+  const validTargetNodes = otherNodes.filter((n) => {
+    const valid = getValidRelationships(node.categoryId, n.categoryId);
+    return valid.valid;
+  });
+
   const handleAddConnection = async () => {
     if (!selectedTargetId) return;
+    const targetNode = nodes.find((n) => n.id === selectedTargetId);
+    if (!targetNode) return;
+
+    const valid = getValidRelationships(node.categoryId, targetNode.categoryId);
+    if (!valid.valid || valid.relationships.length === 0) return;
+
     try {
       await addEdge({
         sourceNodeId: node.id,
         targetNodeId: selectedTargetId,
-        relationship: 'relates to'
+        relationshipId: valid.relationships[0].id
       });
       setSelectedTargetId('');
     } catch (err) {
@@ -244,8 +249,8 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             </span>
           </div>
 
-          {/* Quick Connect dropdown */}
-          {otherNodes.length > 0 && (
+          {/* Quick Connect dropdown (Filtered to categories allowed by rule matrix) */}
+          {validTargetNodes.length > 0 ? (
             <div className="flex items-center gap-1.5">
               <select
                 value={selectedTargetId}
@@ -253,9 +258,9 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                 className="flex-1 px-2.5 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-cyan-500/50"
               >
                 <option value="" className="bg-[#0B1220] text-slate-400">
-                  Connect to node...
+                  Connect to valid node...
                 </option>
-                {otherNodes.map((on) => {
+                {validTargetNodes.map((on) => {
                   const onName = getProperty(on.properties, 'name') || on.id;
                   const isConnected = nodeEdges.some(
                     (e) =>
@@ -277,11 +282,13 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               <button
                 onClick={handleAddConnection}
                 disabled={!selectedTargetId}
-                className="px-2.5 py-1.5 text-xs font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                className="px-2.5 py-1.5 text-xs font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
                 Link
               </button>
             </div>
+          ) : (
+            <p className="text-[11px] text-slate-500 italic">No compatible targets allowed by rule matrix.</p>
           )}
 
           {/* Existing Connections list */}
@@ -297,6 +304,8 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                   ? getProperty(otherNode.properties, 'name') || otherNode.id
                   : otherId;
                 const cat = nodeCategories.find((c) => c.id === otherNode?.categoryId);
+                const relDef = RELATIONSHIPS_BY_ID[e.relationshipId];
+                const relColor = getRelationshipColor(e.relationshipId);
 
                 return (
                   <div
@@ -321,23 +330,31 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                       <button
                         onClick={() => removeEdge(e.id)}
                         title="Disconnect"
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
                     </div>
 
-                    {/* Relationship badge & rename connection trigger */}
+                    {/* Semantic relationship badge & inspector trigger */}
                     <div className="flex items-center justify-between pl-4">
                       <button
                         onClick={() => selectEdge(e.id)}
-                        className="flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/20 transition-all truncate max-w-[210px]"
-                        title="Click to rename connection"
+                        className="flex items-center gap-1.5 text-[11px] font-mono px-2 py-0.5 rounded transition-all truncate max-w-[210px] border cursor-pointer"
+                        style={{
+                          backgroundColor: `${relColor}15`,
+                          borderColor: `${relColor}40`,
+                          color: relColor
+                        }}
+                        title="Click to inspect relationship"
                       >
-                        <span className="truncate">{e.relationship || 'relates to'}</span>
-                        <Edit2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: relColor }}
+                        />
+                        <span className="truncate">{relDef?.label || e.relationshipId}</span>
                       </button>
-                      <span className="text-[10px] text-slate-500">Edit</span>
+                      <span className="text-[10px] text-slate-500">Inspect</span>
                     </div>
                   </div>
                 );
@@ -366,7 +383,7 @@ interface EdgeInspectorProps {
   targetNode?: Node;
   onClose: () => void;
   onDelete: (id: string) => void;
-  onUpdateRelationship: (id: string, relationship: string) => Promise<void>;
+  onUpdateRelationship: (id: string, relationshipId: string) => Promise<void>;
   onReverse?: (id: string) => Promise<void> | void;
 }
 
@@ -379,38 +396,7 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   onUpdateRelationship,
   onReverse
 }) => {
-  const [localRelationship, setLocalRelationship] = useState(() => edge.relationship || '');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    };
-  }, []);
-
-  const handleRelationshipChange = (newRel: string) => {
-    setLocalRelationship(newRel);
-    setSaveStatus('saving');
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(async () => {
-      await onUpdateRelationship(edge.id, newRel);
-      setSaveStatus('saved');
-    }, 250);
-  };
-
-  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      await onUpdateRelationship(edge.id, localRelationship);
-      setSaveStatus('saved');
-      (e.target as HTMLInputElement).blur();
-    }
-  };
 
   const sourceName = sourceNode
     ? getProperty(sourceNode.properties, 'name') || sourceNode.id
@@ -418,6 +404,33 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   const targetName = targetNode
     ? getProperty(targetNode.properties, 'name') || targetNode.id
     : edge.targetNodeId;
+
+  const sourceCat = sourceNode?.categoryId || '';
+  const targetCat = targetNode?.categoryId || '';
+
+  const validResult =
+    sourceNode && targetNode
+      ? getValidRelationships(sourceCat, targetCat)
+      : { valid: false, relationships: [] };
+
+  const currentDef = RELATIONSHIPS_BY_ID[edge.relationshipId];
+  const groupInfo = getRelationshipGroupInfo(edge.relationshipId);
+
+  const reverseAllowed =
+    targetNode && sourceNode
+      ? getValidRelationships(targetCat, sourceCat).valid
+      : false;
+
+  const handleRelationshipSelect = async (newRelId: string) => {
+    setSaveStatus('saving');
+    try {
+      await onUpdateRelationship(edge.id, newRelId);
+      setSaveStatus('saved');
+    } catch (e) {
+      console.error('Failed to update relationship:', e);
+      setSaveStatus('saved');
+    }
+  };
 
   return (
     <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
@@ -438,58 +451,82 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
         <button
           onClick={onClose}
           title="Close (Esc)"
-          className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors"
+          className="p-1 rounded-md text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Connected Endpoints */}
-      <div className="p-5 border-b border-white/5 text-xs space-y-2 text-slate-400">
+      <div className="p-5 border-b border-white/5 text-xs space-y-2.5 text-slate-400">
         <div className="flex items-center justify-between">
           <span className="text-slate-500">From</span>
-          <span className="text-slate-200 font-medium truncate max-w-[170px]">{sourceName}</span>
+          <div className="flex items-center gap-1.5 text-right min-w-0">
+            <span className="text-slate-200 font-medium truncate max-w-[125px]">{sourceName}</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-cyan-400 shrink-0">
+              {sourceCat}
+            </span>
+          </div>
         </div>
         <div className="flex items-center justify-center text-slate-600">
-          <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+          <ArrowRight className="w-3.5 h-3.5 text-cyan-400" />
         </div>
         <div className="flex items-center justify-between">
           <span className="text-slate-500">To</span>
-          <span className="text-slate-200 font-medium truncate max-w-[170px]">{targetName}</span>
+          <div className="flex items-center gap-1.5 text-right min-w-0">
+            <span className="text-slate-200 font-medium truncate max-w-[125px]">{targetName}</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-cyan-400 shrink-0">
+              {targetCat}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Relationship editor */}
+      {/* Semantic Relationship Editor */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-slate-300">Relationship Label</label>
-          <input
-            type="text"
-            value={localRelationship}
-            onChange={(e) => handleRelationshipChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="e.g. Injects credentials into"
-            className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-100 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all font-mono"
-          />
+          <label className="block text-xs font-medium text-slate-300">Relationship Type</label>
+          <select
+            value={edge.relationshipId}
+            onChange={(e) => handleRelationshipSelect(e.target.value)}
+            className="w-full px-3 py-2 text-xs bg-[#0F172A] border border-white/10 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-all font-sans cursor-pointer"
+          >
+            {validResult.relationships.map((rel) => (
+              <option key={rel.id} value={rel.id} className="bg-[#0F172A] text-slate-100">
+                {rel.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[10px] text-slate-500">
+            Dropdown contains only valid relationships defined for {sourceCat} → {targetCat}.
+          </p>
         </div>
 
-        <div className="space-y-1.5 pt-2">
-          <span className="text-xs text-slate-500 block">Suggestions</span>
-          <div className="flex flex-wrap gap-1.5">
-            {RELATIONSHIP_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => handleRelationshipChange(preset)}
-                className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors text-left ${
-                  localRelationship === preset
-                    ? 'bg-white/10 border-white/30 text-white'
-                    : 'bg-white/[0.02] border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/15'
-                }`}
-              >
-                {preset}
-              </button>
-            ))}
+        {/* Semantic Definition Card */}
+        <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: groupInfo.color }}
+              />
+              <span className="text-xs font-semibold text-slate-200">
+                {currentDef?.label || edge.relationshipId}
+              </span>
+            </div>
+            <span
+              className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-white/5"
+              style={{ color: groupInfo.color }}
+            >
+              {groupInfo.group}
+            </span>
+          </div>
+
+          <div className="text-xs text-slate-400 leading-relaxed pt-2 border-t border-white/5">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500 block mb-1 font-semibold">
+              Description
+            </span>
+            {currentDef?.description || 'Semantic link coordinating pipeline components.'}
           </div>
         </div>
       </div>
@@ -497,13 +534,30 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
       {/* Footer */}
       <div className="p-5 border-t border-white/5 space-y-2">
         {onReverse && (
-          <button
-            onClick={() => onReverse(edge.id)}
-            className="w-full py-2 text-xs font-medium text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/10 border border-white/10 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Reverse Direction</span>
-          </button>
+          <div>
+            <button
+              onClick={() => onReverse(edge.id)}
+              disabled={!reverseAllowed}
+              title={
+                reverseAllowed
+                  ? 'Reverse connection direction'
+                  : 'Reversed connection is not permitted by the rule matrix'
+              }
+              className={`w-full py-2 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                reverseAllowed
+                  ? 'text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/10 border border-white/10 cursor-pointer'
+                  : 'text-slate-600 bg-white/[0.01] border border-white/5 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{reverseAllowed ? 'Reverse Direction' : 'Reverse Disallowed'}</span>
+            </button>
+            {!reverseAllowed && (
+              <span className="block text-[10px] text-slate-500 text-center mt-1">
+                Reverse direction not permitted in rule matrix
+              </span>
+            )}
+          </div>
         )}
         <button
           onClick={() => onDelete(edge.id)}
