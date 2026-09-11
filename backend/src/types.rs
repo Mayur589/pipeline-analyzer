@@ -71,6 +71,7 @@ pub enum ApiError {
     InvalidRelationship,
     DuplicateEdge,
     NodeNotFound,
+    ProjectNotFound,
 }
 
 impl ApiError {
@@ -80,6 +81,7 @@ impl ApiError {
             Self::InvalidRelationship => StatusCode::BAD_REQUEST,
             Self::DuplicateEdge => StatusCode::CONFLICT,
             Self::NodeNotFound => StatusCode::NOT_FOUND,
+            Self::ProjectNotFound => StatusCode::NOT_FOUND,
         }
     }
 }
