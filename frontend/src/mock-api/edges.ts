@@ -6,7 +6,7 @@ export async function insertEdge(input: CreateEdgeInput): Promise<Edge> {
   // Simulate network roundtrip
   await new Promise((resolve) => setTimeout(resolve, 60));
 
-  const projectGraph = getOrCreateProjectGraph(input.projectId);
+  const projectGraph = getOrCreateProjectGraph(input.projectId || 'default-pipeline');
 
   // 1. Find source and target nodes
   const sourceNode = projectGraph.nodes.find((n) => n.id === input.sourceNodeId);

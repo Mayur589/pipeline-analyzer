@@ -182,7 +182,8 @@ const SigmaGraphController: React.FC<ControllerProps> = ({
     nodes.forEach((n, idx) => {
       const cat = nodeCategories.find((c) => c.id === n.categoryId);
       const catColor = cat?.color || '#06b6d4';
-      const label = getProperty(n.properties, 'name') || n.id;
+      const rawLabel = getProperty(n.properties, 'name');
+      const label = rawLabel !== undefined ? String(rawLabel) : n.id;
       const nodeSize = Math.max(12, Math.min(20, 10 + label.length * 0.45));
 
       if (graph.hasNode(n.id)) {

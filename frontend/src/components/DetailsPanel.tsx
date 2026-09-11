@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graphStore';
-import type { Node, Edge, NodeCategory } from '../types/graph';
+import type { Node, Edge, NodeCategory, NodeProperties } from '../types/graph';
 import { getProperty, propertiesToObject } from '../types/graph';
 import {
   RELATIONSHIPS_BY_ID,
@@ -15,7 +15,7 @@ interface NodeInspectorProps {
   category?: NodeCategory;
   onClose: () => void;
   onDelete: (id: string) => void;
-  onUpdateProperties: (id: string, properties: Record<string, any>) => Promise<void>;
+  onUpdateProperties: (id: string, properties: NodeProperties) => Promise<void>;
 }
 
 const NodeInspector: React.FC<NodeInspectorProps> = ({
@@ -27,7 +27,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
 }) => {
   const { nodes, edges, addEdge, removeEdge, selectNode, selectEdge, nodeCategories } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
-  const [localProps, setLocalProps] = useState<Record<string, any>>(() =>
+  const [localProps, setLocalProps] = useState<NodeProperties>(() =>
     propertiesToObject(node.properties)
   );
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
@@ -132,8 +132,8 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
           Properties
         </div>
 
-        {category?.defaultProperties.map((propKey) => {
-          const fieldDef = category.fieldDefs?.find((f) => f.key === propKey);
+        {(category?.fieldDefs?.map((f) => f.key) || category?.defaultProperties || []).map((propKey) => {
+          const fieldDef = category?.fieldDefs?.find((f) => f.key === propKey);
           const label =
             fieldDef?.label ||
             propKey.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase());
@@ -181,7 +181,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               <div key={propKey} className="space-y-1.5">
                 <label className="block text-xs font-medium text-slate-300">{label}</label>
                 <select
-                  value={currentValue}
+                  value={String(currentValue ?? '')}
                   onChange={(e) => handlePropertyChange(propKey, e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all"
                 >
@@ -200,7 +200,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               <label className="block text-xs font-medium text-slate-300">{label}</label>
               <input
                 type="text"
-                value={currentValue}
+                value={String(currentValue ?? '')}
                 onChange={(e) => handlePropertyChange(propKey, e.target.value)}
                 placeholder={fieldDef?.placeholder || `Enter ${label}...`}
                 className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all"
@@ -218,7 +218,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             </div>
             {localProps.imageUrl && (
               <img
-                src={localProps.imageUrl}
+                src={String(localProps.imageUrl)}
                 alt="Node thumbnail"
                 className="w-14 h-14 rounded-lg object-cover border border-white/10"
               />

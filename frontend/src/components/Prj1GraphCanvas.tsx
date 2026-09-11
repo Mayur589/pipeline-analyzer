@@ -111,7 +111,8 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const gNodes: GraphNode[] = nodes.map((n) => {
       const cat = nodeCategories.find((c) => c.id === n.categoryId);
-      const name = getProperty(n.properties, 'name') || n.id;
+      const rawName = getProperty(n.properties, 'name');
+      const name = rawName !== undefined ? String(rawName) : n.id;
       const degree = degreeMap.get(n.id) || 0;
       // Dynamic node size based on number of connections (degree):
       // Base size 18px for isolated nodes, expanding up to 48px for central hub nodes

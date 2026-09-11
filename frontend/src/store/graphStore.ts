@@ -4,7 +4,8 @@ import type {
   Edge,
   NodeCategory,
   CreateNodeInput,
-  CreateEdgeInput
+  CreateEdgeInput,
+  NodeProperties
 } from '../types/graph';
 import { getNodeTypes } from '../mock-api/nodeTypes';
 import { getGraph } from '../mock-api/graph';
@@ -28,7 +29,7 @@ interface GraphStoreState {
   loadGraph: (projectId?: string) => Promise<void>;
   loadNodeTypes: () => Promise<void>;
   addNode: (input: Omit<CreateNodeInput, 'projectId'>) => Promise<Node>;
-  updateNodeProperties: (nodeId: string, properties: Record<string, any>) => Promise<void>;
+  updateNodeProperties: (nodeId: string, properties: NodeProperties) => Promise<void>;
   removeNode: (nodeId: string) => Promise<void>;
   addEdge: (input: Omit<CreateEdgeInput, 'projectId'>) => Promise<Edge>;
   updateEdgeRelationship: (edgeId: string, relationshipId: string) => Promise<void>;
@@ -93,7 +94,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }
   },
 
-  updateNodeProperties: async (nodeId: string, properties: Record<string, any>) => {
+  updateNodeProperties: async (nodeId: string, properties: NodeProperties) => {
     // Optimistic local update
     set((state) => ({
       nodes: state.nodes.map((n) =>

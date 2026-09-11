@@ -1,11 +1,11 @@
-import type { CreateNodeInput, Node } from '../types/graph';
+import type { CreateNodeInput, Node, NodeProperties } from '../types/graph';
 import { getOrCreateProjectGraph, mockDb, generateId } from './db';
 
 export async function insertNode(input: CreateNodeInput): Promise<Node> {
   // Simulate network roundtrip
   await new Promise((resolve) => setTimeout(resolve, 60));
 
-  const projectGraph = getOrCreateProjectGraph(input.projectId);
+  const projectGraph = getOrCreateProjectGraph(input.projectId || 'default-pipeline');
 
   const newNode: Node = {
     id: generateId('node'),
@@ -24,7 +24,7 @@ export async function insertNode(input: CreateNodeInput): Promise<Node> {
 
 export async function updateNode(
   nodeId: string,
-  properties: Record<string, any> | Map<string, any>,
+  properties: NodeProperties,
   projectId: string = 'default-pipeline'
 ): Promise<Node> {
   // Simulate network roundtrip
