@@ -1,0 +1,4 @@
+style_edition = "2024"
+merge_derives = false
+group_imports = "StdExternalCrate"
+imports_granularity = "Item"
