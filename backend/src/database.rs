@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -15,6 +16,10 @@ pub struct Database {
     pub projects: Vec<Project>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    #[serde(default)]
+    pub node_projects: HashMap<String, String>,
+    #[serde(default)]
+    pub edge_projects: HashMap<String, String>,
 }
 
 #[derive(Debug)]
@@ -41,6 +46,11 @@ pub enum DatabaseError {
 impl DatabaseStore {
     /// Loads the database from `path`, creating an empty database if the file
     /// does not exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::Read`] if reading the file fails, or
+    /// [`DatabaseError::Deserialize`] if deserialization fails.
     pub async fn load(path: impl Into<PathBuf>) -> Result<Self, DatabaseError> {
         let path = path.into();
 
@@ -69,6 +79,11 @@ impl DatabaseStore {
     /// Mutates the database and persists the change to disk.
     ///
     /// If persistence fails, the in-memory mutation is retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::Serialize`] if serialization fails, or
+    /// [`DatabaseError::Write`] if writing to disk fails.
     pub async fn update<F>(&self, update: F) -> Result<(), DatabaseError>
     where
         F: FnOnce(&mut Database),
@@ -80,6 +95,11 @@ impl DatabaseStore {
     }
 
     /// Replaces the entire database and persists it to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::Serialize`] if serialization fails, or
+    /// [`DatabaseError::Write`] if writing to disk fails.
     pub async fn replace(&self, database: Database) -> Result<(), DatabaseError> {
         let mut data = self.data.write().await;
 

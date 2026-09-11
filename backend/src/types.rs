@@ -6,7 +6,8 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum PropertyField {
     String(String),
     Number(f64),
@@ -78,12 +79,11 @@ pub enum ApiError {
 impl ApiError {
     fn status_code(self) -> StatusCode {
         match self {
-            Self::InvalidCategoryConnection => StatusCode::BAD_REQUEST,
-            Self::InvalidRelationship => StatusCode::BAD_REQUEST,
+            Self::InvalidCategoryConnection | Self::InvalidRelationship => StatusCode::BAD_REQUEST,
             Self::DuplicateEdge => StatusCode::CONFLICT,
-            Self::NodeNotFound => StatusCode::NOT_FOUND,
-            Self::EdgeNotFound => StatusCode::NOT_FOUND,
-            Self::ProjectNotFound => StatusCode::NOT_FOUND,
+            Self::NodeNotFound | Self::EdgeNotFound | Self::ProjectNotFound => {
+                StatusCode::NOT_FOUND
+            }
         }
     }
 }
