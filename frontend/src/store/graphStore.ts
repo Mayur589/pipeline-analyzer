@@ -26,6 +26,7 @@ interface GraphStoreState {
   edges: Edge[];
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
+  connectSourceId: string | null;
   nodeCategories: NodeCategory[];
   allRelationships: string[];
 
@@ -53,6 +54,7 @@ interface GraphStoreState {
   ) => Promise<{ valid: boolean; allowedRelationshipIds: string[] }>;
   selectNode: (nodeId: string | null) => void;
   selectEdge: (edgeId: string | null) => void;
+  setConnectSourceId: (nodeId: string | null) => void;
   clearSelection: () => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   clearCanvas: () => void;
@@ -65,6 +67,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   selectedEdgeId: null,
+  connectSourceId: null,
   nodeCategories: [],
   allRelationships: [],
   isLoading: false,
@@ -120,7 +123,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   selectProject: async (projectId: string) => {
     if (projectId === get().projectId) return;
-    set({ projectId, selectedNodeId: null, selectedEdgeId: null });
+    set({ projectId, selectedNodeId: null, selectedEdgeId: null, connectSourceId: null });
     await get().loadGraph(projectId);
   },
 
@@ -385,8 +388,12 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     });
   },
 
+  setConnectSourceId: (nodeId: string | null) => {
+    set({ connectSourceId: nodeId });
+  },
+
   clearSelection: () => {
-    set({ selectedNodeId: null, selectedEdgeId: null });
+    set({ selectedNodeId: null, selectedEdgeId: null, connectSourceId: null });
   },
 
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => {

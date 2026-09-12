@@ -69,7 +69,10 @@ export const getBaseUrl = (): string => {
   const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
   const procEnv = (globalThis as unknown as { process?: { env?: Record<string, string> } })?.process?.env;
   const custom = metaEnv?.VITE_API_BASE_URL || procEnv?.VITE_API_BASE_URL;
-  return custom && custom.trim() ? custom.trim() : 'http://127.0.0.1:3000';
+  if (custom && custom.trim()) return custom.trim();
+  // In browser, use same-origin relative URLs to leverage Vite dev proxy and ensure network tab visibility
+  if (typeof window !== 'undefined') return '';
+  return 'http://127.0.0.1:3000';
 };
 
 

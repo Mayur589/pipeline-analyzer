@@ -78,7 +78,6 @@ export const Prj1GraphCanvas: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLegendOpen, setIsLegendOpen] = useState(true);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [connectSourceId, setConnectSourceId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     nodeId: string;
     x: number;
@@ -90,6 +89,8 @@ export const Prj1GraphCanvas: React.FC = () => {
     edges,
     selectedNodeId,
     selectedEdgeId,
+    connectSourceId,
+    setConnectSourceId,
     selectNode,
     selectEdge,
     clearSelection,
@@ -174,8 +175,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     }, 4500);
   }, []);
 
-  const [validationCache, setValidationCache] = useState<Map<string, boolean>>(new Map());
-
   const handleAttemptConnect = useCallback(
     async (sourceId: string, targetId: string) => {
       const src = nodes.find((n) => n.id === sourceId);
@@ -237,36 +236,78 @@ export const Prj1GraphCanvas: React.FC = () => {
     handleAttemptConnectRef.current = handleAttemptConnect;
   }, [handleAttemptConnect]);
 
-  const validateConnectionFn = useCallback(
-    (sourceId: string, targetId: string) => {
-      const src = nodes.find((n) => n.id === sourceId);
-      const tgt = nodes.find((n) => n.id === targetId);
-      if (!src || !tgt) return { valid: false, count: 0 };
-      const cacheKey = `${src.categoryId}->${tgt.categoryId}`;
-      if (validationCache.has(cacheKey)) {
-        const isValid = validationCache.get(cacheKey)!;
-        return { valid: isValid, count: isValid ? 1 : 0 };
+  const handleCandidateHover = useCallback(
+    (sourceId: string, candidateTargetId: string | null) => {
+      if (!candidateTargetId) {
+        if (engineRef.current) {
+          engineRef.current.setCandidateValidation(null);
+        }
+        return;
       }
-      // Populate cache asynchronously
+
+      // Always resolve latest nodes from store to prevent stale closure misses
+      const storeNodes = useGraphStore.getState().nodes;
+      const allNodes = storeNodes && storeNodes.length > 0 ? storeNodes : nodes;
+      const src = allNodes.find((n) => n.id === sourceId);
+      const tgt = allNodes.find((n) => n.id === candidateTargetId);
+      if (!src || !tgt) {
+        console.warn(`[Validate Hover] Candidate node lookup failed: sourceId=${sourceId}, candidateTargetId=${candidateTargetId}`);
+        if (engineRef.current) {
+          engineRef.current.setCandidateValidation({
+            status: 'invalid',
+            targetId: candidateTargetId
+          });
+        }
+        return;
+      }
+
+      // Immediately set candidate validation to validating status on hover
+      if (engineRef.current) {
+        engineRef.current.setCandidateValidation({
+          status: 'validating',
+          targetId: candidateTargetId
+        });
+      }
+
+      console.log(`[Validate Hover] Calling GET /relationships/validate for ${src.categoryId} -> ${tgt.categoryId}`);
+
+      // Dynamically validate relationship on hover via backend API contract
       validateRelationship(src.categoryId, tgt.categoryId)
         .then((res) => {
-          setValidationCache((prev) => new Map(prev).set(cacheKey, res.valid));
+          console.log(`[Validate Hover] API response for ${src.categoryId} -> ${tgt.categoryId}:`, res);
+          if (engineRef.current) {
+            const isValid = Boolean(res.valid && res.allowedRelationshipIds && res.allowedRelationshipIds.length > 0);
+            engineRef.current.setCandidateValidation({
+              status: isValid ? 'valid' : 'invalid',
+              targetId: candidateTargetId,
+              allowedCount: res.allowedRelationshipIds ? res.allowedRelationshipIds.length : 0,
+              label: res.allowedRelationshipIds?.[0] ? formatRelationshipLabel(res.allowedRelationshipIds[0]) : undefined
+            });
+          }
         })
-        .catch(console.error);
-
-      // Default to allowed during drag until backend check resolves
-      return { valid: true, count: 1 };
+        .catch((err) => {
+          console.error(`[Validate Hover] API error for ${src.categoryId} -> ${tgt.categoryId}:`, err);
+          if (engineRef.current) {
+            engineRef.current.setCandidateValidation({
+              status: 'invalid',
+              targetId: candidateTargetId,
+              errorMessage: err?.message
+            });
+          }
+        });
     },
-    [nodes, validationCache]
+    [nodes]
   );
 
-  const validateConnectionRef = useRef(validateConnectionFn);
+  const handleCandidateHoverRef = useRef(handleCandidateHover);
   useEffect(() => {
-    validateConnectionRef.current = validateConnectionFn;
+    handleCandidateHoverRef.current = handleCandidateHover;
     if (engineRef.current) {
-      engineRef.current.setValidateConnection(validateConnectionFn);
+      engineRef.current.setOnCandidateHover((srcId, tgtId) => {
+        handleCandidateHoverRef.current(srcId, tgtId);
+      });
     }
-  }, [validateConnectionFn]);
+  }, [handleCandidateHover]);
 
   // Keep latest callbacks in ref to avoid re-initializing engine
   const callbacksRef = useRef({
@@ -276,7 +317,8 @@ export const Prj1GraphCanvas: React.FC = () => {
     addEdge,
     removeNode,
     connectSourceId,
-    selectedNodeId
+    selectedNodeId,
+    setConnectSourceId
   });
 
   useEffect(() => {
@@ -287,7 +329,8 @@ export const Prj1GraphCanvas: React.FC = () => {
       addEdge,
       removeNode,
       connectSourceId,
-      selectedNodeId
+      selectedNodeId,
+      setConnectSourceId
     };
   });
 
@@ -321,28 +364,29 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const engine = new GraphEngine(canvasRef.current, {
       onSelectNode: (id) => {
-        setConnectSourceId(null);
         setContextMenu(null);
         if (id) {
           callbacksRef.current.selectNode(id);
         } else {
           callbacksRef.current.selectNode(null);
+          callbacksRef.current.setConnectSourceId(null);
         }
       },
       onSelectEdge: (id) => {
-        setConnectSourceId(null);
         setContextMenu(null);
         callbacksRef.current.selectEdge(id);
       },
-      onHoverNode: (id) => setHoveredNodeId(id),
+      onHoverNode: (id) => {
+        setHoveredNodeId(id);
+      },
       onConnectNodes: (sourceId, targetId) => {
         handleAttemptConnectRef.current(sourceId, targetId);
       },
-      validateConnection: (sourceId, targetId) => {
-        return validateConnectionRef.current(sourceId, targetId);
+      onCandidateHover: (sourceId, targetId) => {
+        handleCandidateHoverRef.current(sourceId, targetId);
       },
       onConnectCancel: () => {
-        setConnectSourceId(null);
+        callbacksRef.current.setConnectSourceId(null);
         setContextMenu(null);
       },
       onNodeContextMenu: (nodeId, clientX, clientY) => {
@@ -593,7 +637,7 @@ export const Prj1GraphCanvas: React.FC = () => {
       {connectSourceId && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 backdrop-blur-md text-cyan-200 text-xs shadow-lg animate-fade-in">
           <Link2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-          <span>Click any node to create relationship</span>
+          <span>Hover over candidate node to validate connection (click to connect, ESC to cancel)</span>
           <button
             onClick={() => setConnectSourceId(null)}
             className="ml-2 hover:text-white underline text-[11px]"

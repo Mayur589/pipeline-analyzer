@@ -7,6 +7,14 @@ export interface Camera {
   zoom: number;
 }
 
+export interface CandidateValidationState {
+  status: 'validating' | 'valid' | 'invalid';
+  targetId: string;
+  allowedCount?: number;
+  label?: string;
+  errorMessage?: string;
+}
+
 export class GraphEngine {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -28,6 +36,8 @@ export class GraphEngine {
   private hoveredNodeId: string | null = null;
   private hoveredEdgeId: string | null = null;
   private connectingSourceId: string | null = null;
+  private connectingCandidateId: string | null = null;
+  private candidateValidation: CandidateValidationState | null = null;
   private mouseWorldPos = { x: 0, y: 0 };
   private isDraggingNode = false;
   private isPanning = false;
@@ -44,10 +54,10 @@ export class GraphEngine {
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
   private onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
   private onHoverNode?: (id: string | null) => void;
+  private onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
   private onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
-  private validateConnection?: (sourceId: string, targetId: string) => { valid: boolean; count: number };
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -55,10 +65,10 @@ export class GraphEngine {
       onSelectNode?: (id: string | null, e?: PointerEvent) => void;
       onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
       onHoverNode?: (id: string | null) => void;
+      onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
       onNodeContextMenu?: (id: string | null, clientX: number, clientY: number) => void;
-      validateConnection?: (sourceId: string, targetId: string) => { valid: boolean; count: number };
     }
   ) {
     this.canvas = canvas;
@@ -66,21 +76,34 @@ export class GraphEngine {
     this.onSelectNode = options.onSelectNode;
     this.onSelectEdge = options.onSelectEdge;
     this.onHoverNode = options.onHoverNode;
+    this.onCandidateHover = options.onCandidateHover;
     this.onConnectNodes = options.onConnectNodes;
     this.onConnectCancel = options.onConnectCancel;
     this.onNodeContextMenu = options.onNodeContextMenu;
-    this.validateConnection = options.validateConnection;
 
     this.setupEvents();
     this.centerCamera();
   }
 
-  public setValidateConnection(fn?: (sourceId: string, targetId: string) => { valid: boolean; count: number }) {
-    this.validateConnection = fn;
+  public getConnectingCandidateId(): string | null {
+    return this.connectingCandidateId;
+  }
+
+  public setCandidateValidation(validation: CandidateValidationState | null) {
+    this.candidateValidation = validation;
+  }
+
+  public setOnCandidateHover(fn?: (sourceId: string, candidateTargetId: string | null) => void) {
+    this.onCandidateHover = fn;
   }
 
   public setConnectingSource(nodeId: string | null) {
+    if (this.connectingCandidateId && this.onCandidateHover && this.connectingSourceId) {
+      this.onCandidateHover(this.connectingSourceId, null);
+    }
     this.connectingSourceId = nodeId;
+    this.connectingCandidateId = null;
+    this.candidateValidation = null;
     if (this.canvas) {
       this.canvas.style.cursor = nodeId ? 'crosshair' : 'grab';
     }
@@ -226,7 +249,12 @@ export class GraphEngine {
 
     window.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.connectingSourceId) {
+        if (this.connectingCandidateId && this.onCandidateHover) {
+          this.onCandidateHover(this.connectingSourceId, null);
+        }
         this.connectingSourceId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         if (this.canvas) this.canvas.style.cursor = 'grab';
         if (this.onConnectCancel) this.onConnectCancel();
       }
@@ -265,13 +293,20 @@ export class GraphEngine {
         }
         this.justConnected = true;
         this.connectingSourceId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
         return;
       } else {
         // Right-click on empty canvas: cancel connection
+        if (this.connectingCandidateId && this.onCandidateHover) {
+          this.onCandidateHover(this.connectingSourceId, null);
+        }
         this.connectingSourceId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         this.canvas.style.cursor = 'grab';
         if (this.onConnectCancel) this.onConnectCancel();
         return;
@@ -410,15 +445,16 @@ export class GraphEngine {
     worldY: number,
     excludeId?: string | null
   ): GraphNode | null {
-    // 1. Direct hit-test with generous tolerance (radius + 20px, or label pill)
-    const directHit = this.hitTest(worldX, worldY, 20);
+    // 1. Direct hit-test on the node circle or its label pill (generous tolerance)
+    const hitTolerance = Math.max(14, 18 / Math.max(0.1, this.camera.zoom));
+    const directHit = this.hitTest(worldX, worldY, hitTolerance);
     if (directHit && (!excludeId || directHit.id !== excludeId)) {
       return directHit;
     }
 
-    // 2. Magnetic snap: calculate snap distance in screen pixels so it works at any zoom level
-    const screenSnapPx = 75;
-    const worldSnapDist = Math.max(90, screenSnapPx / Math.max(0.1, this.camera.zoom));
+    // 2. Proximity snap strictly within 30 screen pixels from node perimeter
+    const screenSnapPx = 30;
+    const worldSnapDist = screenSnapPx / Math.max(0.1, this.camera.zoom);
     const maxDistSq = worldSnapDist * worldSnapDist;
 
     let closest: GraphNode | null = null;
@@ -429,11 +465,11 @@ export class GraphEngine {
       if (excludeId && node.id === excludeId) continue;
       const nx = node.x ?? 0;
       const ny = node.y ?? 0;
-      const dx = worldX - nx;
-      const dy = worldY - ny;
-      const distSq = dx * dx + dy * dy;
-      if (distSq < minDistanceSq) {
-        minDistanceSq = distSq;
+      const r = (node.size || 20) * (this.displayConfig?.nodeScale || 1.0);
+      const centerDist = Math.hypot(worldX - nx, worldY - ny);
+      const edgeDist = Math.max(0, centerDist - r);
+      if (edgeDist * edgeDist < minDistanceSq) {
+        minDistanceSq = edgeDist * edgeDist;
         closest = node;
       }
     }
@@ -461,13 +497,20 @@ export class GraphEngine {
         }
         this.justConnected = true;
         this.connectingSourceId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
         return;
       } else {
         // Cancel if clicked empty canvas or outside any node
+        if (this.connectingCandidateId && this.onCandidateHover) {
+          this.onCandidateHover(this.connectingSourceId, null);
+        }
         this.connectingSourceId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
@@ -505,6 +548,7 @@ export class GraphEngine {
     if (hitNode) {
       this.isDraggingNode = true;
       this.dragNodeId = hitNode.id;
+      this.selectedNodeId = hitNode.id;
       if (this.onSelectNode) this.onSelectNode(hitNode.id, e);
 
       if (this.worker) {
@@ -520,11 +564,16 @@ export class GraphEngine {
       if (hitEdge) {
         this.selectedEdgeId = hitEdge.id;
         this.selectedNodeId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         this.isPanning = false;
         if (this.onSelectEdge) this.onSelectEdge(hitEdge.id, e.clientX, e.clientY);
       } else {
         this.isPanning = true;
         this.panStart = { x: screenX - this.camera.x, y: screenY - this.camera.y };
+        this.selectedNodeId = null;
+        this.connectingCandidateId = null;
+        this.candidateValidation = null;
         if (this.onSelectNode) this.onSelectNode(null, e);
         if (this.onSelectEdge) this.onSelectEdge(null);
       }
@@ -549,7 +598,16 @@ export class GraphEngine {
 
     if (this.connectingSourceId) {
       const target = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
-      this.hoveredNodeId = target ? target.id : null;
+      const targetId = (target && target.id !== this.connectingSourceId) ? target.id : null;
+
+      if (this.connectingCandidateId !== targetId) {
+        this.connectingCandidateId = targetId;
+        if (this.onCandidateHover) {
+          this.onCandidateHover(this.connectingSourceId, targetId);
+        }
+      }
+
+      this.hoveredNodeId = targetId;
       if (this.onHoverNode) {
         this.onHoverNode(this.hoveredNodeId);
       }
@@ -573,6 +631,20 @@ export class GraphEngine {
           y: worldPos.y
         });
       }
+
+      // Detect hover over candidate target node while dragging
+      const hitTarget = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.dragNodeId);
+      const targetId = (hitTarget && hitTarget.id !== this.dragNodeId) ? hitTarget.id : null;
+      if (this.connectingCandidateId !== targetId) {
+        this.connectingCandidateId = targetId;
+        if (this.onCandidateHover) {
+          this.onCandidateHover(this.dragNodeId, targetId);
+        }
+      }
+      if (this.onHoverNode) {
+        this.onHoverNode(targetId);
+      }
+      return;
     } else if (this.isPanning) {
       this.camera.x = screenX - this.panStart.x;
       this.camera.y = screenY - this.panStart.y;
@@ -581,16 +653,37 @@ export class GraphEngine {
       const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
       if (hitNode) {
         this.hoveredEdgeId = null;
+        this.hoveredNodeId = hitNode.id;
         this.canvas.style.cursor = 'pointer';
         if (this.onHoverNode) {
           this.onHoverNode(hitNode.id);
         }
+
+        // If a node is selected, validate connection to this candidate node on hover!
+        if (this.selectedNodeId && hitNode.id !== this.selectedNodeId) {
+          if (this.connectingCandidateId !== hitNode.id) {
+            this.connectingCandidateId = hitNode.id;
+            if (this.onCandidateHover) {
+              this.onCandidateHover(this.selectedNodeId, hitNode.id);
+            }
+          }
+        }
       } else {
         const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
         this.hoveredEdgeId = hitEdge ? hitEdge.id : null;
+        this.hoveredNodeId = null;
         this.canvas.style.cursor = hitEdge ? 'pointer' : 'grab';
         if (this.onHoverNode) {
           this.onHoverNode(null);
+        }
+
+        if (this.connectingCandidateId) {
+          const prevSource = this.connectingSourceId || this.selectedNodeId;
+          this.connectingCandidateId = null;
+          this.candidateValidation = null;
+          if (prevSource && this.onCandidateHover) {
+            this.onCandidateHover(prevSource, null);
+          }
         }
       }
     }
@@ -618,7 +711,12 @@ export class GraphEngine {
         this.justConnected = true;
       }
 
+      if (this.connectingCandidateId && this.onCandidateHover) {
+        this.onCandidateHover(this.connectingSourceId, null);
+      }
       this.connectingSourceId = null;
+      this.connectingCandidateId = null;
+      this.candidateValidation = null;
       this.rightClickSourceId = null;
       this.isRightClickDragging = false;
       this.isDraggingNode = false;
@@ -640,6 +738,17 @@ export class GraphEngine {
         node.fx = null;
         node.fy = null;
       }
+      // If dragged and dropped on another candidate node, complete connection!
+      if (this.connectingCandidateId && this.connectingCandidateId !== this.dragNodeId) {
+        if (this.onConnectNodes) {
+          this.onConnectNodes(this.dragNodeId, this.connectingCandidateId);
+        }
+        if (this.onCandidateHover) {
+          this.onCandidateHover(this.dragNodeId, null);
+        }
+      }
+      this.connectingCandidateId = null;
+      this.candidateValidation = null;
     }
     this.isDraggingNode = false;
     this.dragNodeId = null;
@@ -758,9 +867,6 @@ export class GraphEngine {
       if (this.connectingSourceId) {
         if (node.id === this.connectingSourceId) {
           isDimmed = false;
-        } else if (this.validateConnection) {
-          const check = this.validateConnection(this.connectingSourceId, node.id);
-          isDimmed = !check.valid;
         }
       }
 
@@ -773,58 +879,82 @@ export class GraphEngine {
         this.displayConfig,
         () => this.draw()
       );
-
-      // If connecting and this is a valid target, draw a soft green guide ring
-      if (this.connectingSourceId && node.id !== this.connectingSourceId && this.validateConnection) {
-        const check = this.validateConnection(this.connectingSourceId, node.id);
-        if (check.valid) {
-          const r = ((node.size || 20) * this.displayConfig.nodeScale) + 4;
-          this.ctx.save();
-          this.ctx.beginPath();
-          this.ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, Math.PI * 2);
-          this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
-          this.ctx.lineWidth = 1.5;
-          this.ctx.setLineDash([4, 4]);
-          this.ctx.stroke();
-          this.ctx.restore();
-        }
-      }
     });
 
     // Dynamic Connection Rubberband Preview
-    if (this.connectingSourceId) {
-      const srcNode = this.nodesMap.get(this.connectingSourceId);
+    const activeConnSourceId =
+      this.connectingSourceId ||
+      (this.isDraggingNode && this.connectingCandidateId ? this.dragNodeId : null) ||
+      (this.hoveredNodeId && this.selectedNodeId && this.hoveredNodeId !== this.selectedNodeId ? this.selectedNodeId : null);
+
+    if (activeConnSourceId) {
+      const srcNode = this.nodesMap.get(activeConnSourceId);
       if (srcNode) {
         const sx = srcNode.x ?? 0;
         const sy = srcNode.y ?? 0;
-        const hitTarget = this.findCandidateTargetNode(
-          this.mouseWorldPos.x,
-          this.mouseWorldPos.y,
-          this.connectingSourceId
-        );
-        const tx =
-          hitTarget && hitTarget.id !== this.connectingSourceId
-            ? (hitTarget.x ?? this.mouseWorldPos.x)
-            : this.mouseWorldPos.x;
-        const ty =
-          hitTarget && hitTarget.id !== this.connectingSourceId
-            ? (hitTarget.y ?? this.mouseWorldPos.y)
-            : this.mouseWorldPos.y;
+        const hitTarget =
+          this.findCandidateTargetNode(
+            this.mouseWorldPos.x,
+            this.mouseWorldPos.y,
+            activeConnSourceId
+          ) ||
+          (this.connectingCandidateId ? this.nodesMap.get(this.connectingCandidateId) || null : null) ||
+          (this.hoveredNodeId ? this.nodesMap.get(this.hoveredNodeId) || null : null);
 
-        let targetValidation = { valid: true, count: 1 };
-        if (hitTarget && hitTarget.id !== this.connectingSourceId && this.validateConnection) {
-          targetValidation = this.validateConnection(this.connectingSourceId, hitTarget.id);
+        const isHit = Boolean(hitTarget && hitTarget.id !== activeConnSourceId);
+        const tx = isHit && hitTarget
+          ? (hitTarget.x ?? this.mouseWorldPos.x)
+          : this.mouseWorldPos.x;
+        const ty = isHit && hitTarget
+          ? (hitTarget.y ?? this.mouseWorldPos.y)
+          : this.mouseWorldPos.y;
+
+        let strokeColor = '#06b6d4';
+        let targetRingColor = 'rgba(6, 182, 212, 0.8)';
+        let targetFillColor = 'rgba(6, 182, 212, 0.15)';
+        let badgeText = '⏳ Validating...';
+        let badgeBg = 'rgba(12, 74, 110, 0.95)';
+        let badgeBorder = '#38bdf8';
+
+        if (isHit && hitTarget) {
+          const val =
+            this.candidateValidation && this.candidateValidation.targetId === hitTarget.id
+              ? this.candidateValidation
+              : null;
+
+          if (val?.status === 'valid') {
+            strokeColor = '#10b981';
+            targetRingColor = 'rgba(16, 185, 129, 0.9)';
+            targetFillColor = 'rgba(16, 185, 129, 0.25)';
+            const count = val.allowedCount ?? 1;
+            badgeText =
+              count > 1
+                ? `✓ Valid (${count} options)`
+                : (val.label ? `✓ Valid: ${val.label}` : '✓ Valid');
+            badgeBg = 'rgba(6, 78, 59, 0.95)';
+            badgeBorder = '#10b981';
+          } else if (val?.status === 'invalid') {
+            strokeColor = '#ef4444';
+            targetRingColor = 'rgba(239, 68, 68, 0.9)';
+            targetFillColor = 'rgba(239, 68, 68, 0.25)';
+            badgeText = '✕ Invalid Connection';
+            badgeBg = 'rgba(127, 29, 29, 0.95)';
+            badgeBorder = '#ef4444';
+          } else {
+            // Validating / checking
+            strokeColor = '#38bdf8';
+            targetRingColor = 'rgba(56, 189, 248, 0.9)';
+            targetFillColor = 'rgba(56, 189, 248, 0.2)';
+            badgeText = '⏳ Validating...';
+            badgeBg = 'rgba(12, 74, 110, 0.95)';
+            badgeBorder = '#38bdf8';
+          }
         }
-
-        const isHitValid = targetValidation.valid;
-        const strokeColor = hitTarget
-          ? (isHitValid ? '#10b981' : '#ef4444')
-          : '#06b6d4';
 
         this.ctx.save();
         // Guideline dashed line
         this.ctx.strokeStyle = strokeColor;
-        this.ctx.lineWidth = hitTarget ? 2.5 : 2;
+        this.ctx.lineWidth = isHit ? 2.5 : 2;
         this.ctx.setLineDash([6, 4]);
         this.ctx.beginPath();
         this.ctx.moveTo(sx, sy);
@@ -842,36 +972,34 @@ export class GraphEngine {
         this.ctx.stroke();
 
         // Target hover highlight ring + semantic feedback
-        if (hitTarget && hitTarget.id !== this.connectingSourceId) {
+        if (isHit && hitTarget) {
           const tgtRadius = ((hitTarget.size || 20) * this.displayConfig.nodeScale) + 8;
           this.ctx.beginPath();
           this.ctx.arc(hitTarget.x ?? 0, hitTarget.y ?? 0, tgtRadius, 0, Math.PI * 2);
-          this.ctx.strokeStyle = strokeColor;
+          this.ctx.strokeStyle = targetRingColor;
           this.ctx.lineWidth = 2.5;
+          this.ctx.setLineDash([]);
           this.ctx.stroke();
 
-          this.ctx.fillStyle = isHitValid ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)';
+          this.ctx.fillStyle = targetFillColor;
           this.ctx.fill();
 
           // Status badge pill above target node
-          const badgeText = isHitValid
-            ? (targetValidation.count > 1 ? `✓ Valid (${targetValidation.count} options)` : '✓ Valid')
-            : '✕ Invalid Connection';
-          this.ctx.font = 'bold 10px monospace';
+          this.ctx.font = 'bold 11px monospace';
           const textWidth = this.ctx.measureText(badgeText).width;
-          const badgeX = (hitTarget.x ?? 0) - textWidth / 2 - 8;
-          const badgeY = (hitTarget.y ?? 0) - tgtRadius - 16;
+          const badgeX = (hitTarget.x ?? 0) - textWidth / 2 - 10;
+          const badgeY = (hitTarget.y ?? 0) - tgtRadius - 18;
 
-          this.ctx.fillStyle = isHitValid ? 'rgba(6, 78, 59, 0.9)' : 'rgba(127, 29, 29, 0.9)';
+          this.ctx.fillStyle = badgeBg;
           this.ctx.beginPath();
-          this.ctx.roundRect(badgeX, badgeY, textWidth + 16, 18, 4);
+          this.ctx.roundRect(badgeX, badgeY, textWidth + 20, 20, 5);
           this.ctx.fill();
-          this.ctx.strokeStyle = strokeColor;
-          this.ctx.lineWidth = 1;
+          this.ctx.strokeStyle = badgeBorder;
+          this.ctx.lineWidth = 1.2;
           this.ctx.stroke();
 
           this.ctx.fillStyle = '#ffffff';
-          this.ctx.fillText(badgeText, badgeX + 8, badgeY + 12);
+          this.ctx.fillText(badgeText, badgeX + 10, badgeY + 14);
         }
 
         this.ctx.restore();

@@ -9,7 +9,7 @@ import {
   formatRelationshipLabel
 } from '../types/graph';
 import { validateRelationship } from '../api/client';
-import { ArrowRight, X, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { ArrowRight, X, ArrowLeftRight, Loader2, Link2 } from 'lucide-react';
 
 interface NodeInspectorProps {
   node: Node;
@@ -26,7 +26,17 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
   onDelete,
   onUpdateProperties
 }) => {
-  const { nodes, edges, addEdge, removeEdge, selectNode, selectEdge, nodeCategories } = useGraphStore();
+  const {
+    nodes,
+    edges,
+    addEdge,
+    removeEdge,
+    selectNode,
+    selectEdge,
+    nodeCategories,
+    connectSourceId,
+    setConnectSourceId
+  } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<NodeProperties>(() =>
     propertiesToObject(node.properties)
@@ -73,6 +83,25 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedTargetId) return;
+    const targetNode = nodes.find((n) => n.id === selectedTargetId);
+    if (!targetNode) return;
+
+    validateRelationship(node.categoryId, targetNode.categoryId)
+      .then((res) => {
+        if (!res.valid || res.allowedRelationshipIds.length === 0) {
+          const tgtCat = nodeCategories.find((c) => c.id === targetNode.categoryId)?.category || targetNode.categoryId;
+          setConnectError(`Cannot connect: ${category?.category || node.categoryId} → ${tgtCat} is not allowed.`);
+        } else {
+          setConnectError(null);
+        }
+      })
+      .catch((err) => {
+        setConnectError(err.message || 'Validation failed.');
+      });
+  }, [selectedTargetId, node.categoryId, category, nodeCategories, nodes]);
 
   const handlePropertyChange = (key: string, value: any) => {
     const updated = { ...localProps, [key]: value };
@@ -221,12 +250,28 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             Connected Nodes ({nodeEdges.length})
           </div>
 
+          {/* Canvas Connect Mode trigger button */}
+          <button
+            onClick={() => setConnectSourceId(connectSourceId === node.id ? null : node.id)}
+            className={`w-full py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+              connectSourceId === node.id
+                ? 'bg-cyan-500/25 text-cyan-200 border-cyan-500/50 shadow-lg shadow-cyan-500/10'
+                : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border-white/10'
+            }`}
+          >
+            <Link2 className={`w-3.5 h-3.5 ${connectSourceId === node.id ? 'text-cyan-400 animate-spin' : 'text-slate-400'}`} />
+            <span>{connectSourceId === node.id ? 'Connecting: Hover target node on canvas...' : 'Connect to Node (Canvas Mode)'}</span>
+          </button>
+
           {/* Connect to Node selector */}
           <div className="space-y-2">
             <div className="flex gap-2">
               <select
                 value={selectedTargetId}
-                onChange={(e) => setSelectedTargetId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedTargetId(e.target.value);
+                  setConnectError(null);
+                }}
                 className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all truncate cursor-pointer"
               >
                 <option value="" className="bg-[#0B1220] text-slate-400">
