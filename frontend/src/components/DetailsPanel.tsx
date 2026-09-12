@@ -9,7 +9,7 @@ import {
   formatRelationshipLabel
 } from '../types/graph';
 import { validateRelationship } from '../api/client';
-import { ArrowRight, X, ArrowLeftRight, Loader2, Link2 } from 'lucide-react';
+import { ArrowRight, X, ArrowLeftRight, Loader2 } from 'lucide-react';
 
 interface NodeInspectorProps {
   node: Node;
@@ -33,9 +33,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
     removeEdge,
     selectNode,
     selectEdge,
-    nodeCategories,
-    connectSourceId,
-    setConnectSourceId
+    nodeCategories
   } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<NodeProperties>(() =>
@@ -249,19 +247,6 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
           <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">
             Connected Nodes ({nodeEdges.length})
           </div>
-
-          {/* Canvas Connect Mode trigger button */}
-          <button
-            onClick={() => setConnectSourceId(connectSourceId === node.id ? null : node.id)}
-            className={`w-full py-2 px-3 rounded-lg text-xs font-medium flex items-center justify-center gap-2 border transition-all cursor-pointer ${
-              connectSourceId === node.id
-                ? 'bg-cyan-500/25 text-cyan-200 border-cyan-500/50 shadow-lg shadow-cyan-500/10'
-                : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08] border-white/10'
-            }`}
-          >
-            <Link2 className={`w-3.5 h-3.5 ${connectSourceId === node.id ? 'text-cyan-400 animate-spin' : 'text-slate-400'}`} />
-            <span>{connectSourceId === node.id ? 'Connecting: Hover target node on canvas...' : 'Connect to Node (Canvas Mode)'}</span>
-          </button>
 
           {/* Connect to Node selector */}
           <div className="space-y-2">

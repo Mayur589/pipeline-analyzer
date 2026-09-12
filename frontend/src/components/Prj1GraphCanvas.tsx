@@ -33,7 +33,8 @@ import {
   Palette,
   ImageOff,
   AlertTriangle,
-  Check
+  Check,
+  CheckCircle2
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
@@ -164,71 +165,83 @@ export const Prj1GraphCanvas: React.FC = () => {
     selectedId: string;
   } | null>(null);
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const toastTimerRef = useRef<any>(null);
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'error') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(msg);
+    setToast({ message: msg, type });
     toastTimerRef.current = setTimeout(() => {
-      setToastMessage(null);
+      setToast(null);
     }, 4500);
   }, []);
 
   const handleAttemptConnect = useCallback(
     async (sourceId: string, targetId: string) => {
-      const src = nodes.find((n) => n.id === sourceId);
-      const tgt = nodes.find((n) => n.id === targetId);
+      if (sourceId === targetId) return;
+      const allNodes = useGraphStore.getState().nodes || nodes;
+      const src = allNodes.find((n) => n.id === sourceId);
+      const tgt = allNodes.find((n) => n.id === targetId);
       if (!src || !tgt) return;
 
-      try {
-        const valid = await validateRelationship(src.categoryId, tgt.categoryId);
-
-        if (!valid.valid || valid.allowedRelationshipIds.length === 0) {
-          const srcCat = nodeCategories.find((c) => c.id === src.categoryId)?.category || src.categoryId;
-          const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.category || tgt.categoryId;
-          showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`);
-          setConnectSourceId(null);
-          setContextMenu(null);
-          return;
-        }
-
-        const options: RelationshipDefinition[] = valid.allowedRelationshipIds.map((id) => ({
-          id,
-          label: formatRelationshipLabel(id)
-        }));
-
-        if (options.length === 1) {
-          // Automatically connect if exactly 1 valid relationship
-          callbacksRef.current.addEdge({
-            sourceNodeId: sourceId,
-            targetNodeId: targetId,
-            relationshipId: options[0].id
-          });
-          setConnectSourceId(null);
-          setContextMenu(null);
-          if (workerRef.current) {
-            workerRef.current.postMessage({ type: 'reheat' });
-          }
-          return;
-        }
-
-        // Multiple valid relationships: show picker modal
+      const currentEdges = useGraphStore.getState().edges || edges;
+      const alreadyConnected = currentEdges.some(
+        (e) =>
+          (e.sourceNodeId === sourceId && e.targetNodeId === targetId) ||
+          (e.sourceNodeId === targetId && e.targetNodeId === sourceId)
+      );
+      if (alreadyConnected) {
+        showToast('Nodes are already connected.', 'error');
         setConnectSourceId(null);
         setContextMenu(null);
-        setRelationshipPicker({
-          sourceNode: src,
-          targetNode: tgt,
-          options,
-          selectedId: options[0].id
+        return;
+      }
+
+      try {
+        const [forwardRes, reverseRes] = await Promise.all([
+          validateRelationship(src.categoryId, tgt.categoryId),
+          validateRelationship(tgt.categoryId, src.categoryId)
+        ]);
+
+        let relId = '';
+        let actualSourceId = sourceId;
+        let actualTargetId = targetId;
+
+        if (forwardRes.valid && forwardRes.allowedRelationshipIds.length > 0) {
+          relId = forwardRes.allowedRelationshipIds[0];
+          actualSourceId = sourceId;
+          actualTargetId = targetId;
+        } else if (reverseRes.valid && reverseRes.allowedRelationshipIds.length > 0) {
+          relId = reverseRes.allowedRelationshipIds[0];
+          actualSourceId = targetId;
+          actualTargetId = sourceId;
+        } else {
+          const srcCat = nodeCategories.find((c) => c.id === src.categoryId)?.label || src.categoryId;
+          const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.label || tgt.categoryId;
+          showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`, 'error');
+          setConnectSourceId(null);
+          setContextMenu(null);
+          return;
+        }
+
+        await callbacksRef.current.addEdge({
+          sourceNodeId: actualSourceId,
+          targetNodeId: actualTargetId,
+          relationshipId: relId
         });
+        showToast(`Connected: ${formatRelationshipLabel(relId)}`, 'success');
+        setConnectSourceId(null);
+        setContextMenu(null);
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'reheat' });
+        }
       } catch (err: any) {
-        showToast(err.message || 'Failed to validate connection.');
+        showToast(err.message || 'Failed to validate connection.', 'error');
         setConnectSourceId(null);
         setContextMenu(null);
       }
     },
-    [nodes, nodeCategories, showToast]
+    [nodes, edges, nodeCategories, showToast]
   );
 
   const handleAttemptConnectRef = useRef(handleAttemptConnect);
@@ -245,7 +258,7 @@ export const Prj1GraphCanvas: React.FC = () => {
         return;
       }
 
-      // Always resolve latest nodes from store to prevent stale closure misses
+      // Always resolve latest nodes and edges from store to prevent stale closure misses
       const storeNodes = useGraphStore.getState().nodes;
       const allNodes = storeNodes && storeNodes.length > 0 ? storeNodes : nodes;
       const src = allNodes.find((n) => n.id === sourceId);
@@ -255,7 +268,26 @@ export const Prj1GraphCanvas: React.FC = () => {
         if (engineRef.current) {
           engineRef.current.setCandidateValidation({
             status: 'invalid',
-            targetId: candidateTargetId
+            targetId: candidateTargetId,
+            errorMessage: '✕ Invalid Connection'
+          });
+        }
+        return;
+      }
+
+      // Check if already connected
+      const currentEdges = useGraphStore.getState().edges || edges;
+      const alreadyConnected = currentEdges.some(
+        (e) =>
+          (e.sourceNodeId === sourceId && e.targetNodeId === candidateTargetId) ||
+          (e.sourceNodeId === candidateTargetId && e.targetNodeId === sourceId)
+      );
+      if (alreadyConnected) {
+        if (engineRef.current) {
+          engineRef.current.setCandidateValidation({
+            status: 'invalid',
+            targetId: candidateTargetId,
+            errorMessage: '✕ Already Connected'
           });
         }
         return;
@@ -269,34 +301,54 @@ export const Prj1GraphCanvas: React.FC = () => {
         });
       }
 
-      console.log(`[Validate Hover] Calling GET /relationships/validate for ${src.categoryId} -> ${tgt.categoryId}`);
+      // Dynamically validate relationship bidirectionally on hover via backend API contract
+      Promise.all([
+        validateRelationship(src.categoryId, tgt.categoryId),
+        validateRelationship(tgt.categoryId, src.categoryId)
+      ])
+        .then(([forwardRes, reverseRes]) => {
+          if (!engineRef.current) return;
+          if (engineRef.current.getConnectingCandidateId() !== candidateTargetId) return;
 
-      // Dynamically validate relationship on hover via backend API contract
-      validateRelationship(src.categoryId, tgt.categoryId)
-        .then((res) => {
-          console.log(`[Validate Hover] API response for ${src.categoryId} -> ${tgt.categoryId}:`, res);
-          if (engineRef.current) {
-            const isValid = Boolean(res.valid && res.allowedRelationshipIds && res.allowedRelationshipIds.length > 0);
+          const isForwardValid = Boolean(forwardRes.valid && forwardRes.allowedRelationshipIds && forwardRes.allowedRelationshipIds.length > 0);
+          const isReverseValid = Boolean(reverseRes.valid && reverseRes.allowedRelationshipIds && reverseRes.allowedRelationshipIds.length > 0);
+
+          if (isForwardValid) {
             engineRef.current.setCandidateValidation({
-              status: isValid ? 'valid' : 'invalid',
+              status: 'valid',
               targetId: candidateTargetId,
-              allowedCount: res.allowedRelationshipIds ? res.allowedRelationshipIds.length : 0,
-              label: res.allowedRelationshipIds?.[0] ? formatRelationshipLabel(res.allowedRelationshipIds[0]) : undefined
+              allowedCount: forwardRes.allowedRelationshipIds ? forwardRes.allowedRelationshipIds.length : 0,
+              label: forwardRes.allowedRelationshipIds?.[0] ? formatRelationshipLabel(forwardRes.allowedRelationshipIds[0]) : undefined,
+              direction: 'forward'
+            });
+          } else if (isReverseValid) {
+            engineRef.current.setCandidateValidation({
+              status: 'valid',
+              targetId: candidateTargetId,
+              allowedCount: reverseRes.allowedRelationshipIds ? reverseRes.allowedRelationshipIds.length : 0,
+              label: reverseRes.allowedRelationshipIds?.[0] ? formatRelationshipLabel(reverseRes.allowedRelationshipIds[0]) : undefined,
+              direction: 'reverse'
+            });
+          } else {
+            engineRef.current.setCandidateValidation({
+              status: 'invalid',
+              targetId: candidateTargetId,
+              errorMessage: '✕ Invalid Connection'
             });
           }
         })
         .catch((err) => {
-          console.error(`[Validate Hover] API error for ${src.categoryId} -> ${tgt.categoryId}:`, err);
+          console.error(`[Validate Hover] API error:`, err);
           if (engineRef.current) {
             engineRef.current.setCandidateValidation({
               status: 'invalid',
               targetId: candidateTargetId,
-              errorMessage: err?.message
+              errorMessage: '✕ Invalid Connection'
             });
           }
         });
     },
-    [nodes]
+    [nodes, edges]
   );
 
   const handleCandidateHoverRef = useRef(handleCandidateHover);
@@ -339,6 +391,8 @@ export const Prj1GraphCanvas: React.FC = () => {
   // Dismiss menus on click outside or escape
   useEffect(() => {
     const handleDismiss = (e: MouseEvent) => {
+      // Only dismiss on left click outside; right clicks are handled by onContextMenu
+      if (e.button !== 0) return;
       if (justOpenedMenuRef.current) {
         justOpenedMenuRef.current = false;
         return;
@@ -349,8 +403,19 @@ export const Prj1GraphCanvas: React.FC = () => {
       }
       setContextMenu(null);
     };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setContextMenu(null);
+      }
+    };
+
     window.addEventListener('click', handleDismiss);
-    return () => window.removeEventListener('click', handleDismiss);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', handleDismiss);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Initialize Web Worker and GraphEngine on mount
@@ -559,35 +624,20 @@ export const Prj1GraphCanvas: React.FC = () => {
               <span className="font-semibold text-slate-200 truncate">{nodeName}</span>
             </div>
 
-            {/* Primary Action: Connect Here or Create Link */}
-            {connectSourceId && connectSourceId !== contextMenu.nodeId ? (
-              <button
-                onClick={() => {
-                  handleAttemptConnect(connectSourceId, contextMenu.nodeId);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-all font-semibold group text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Link2 className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
-                  <span>Connect with {nodeName}</span>
-                </div>
-                <span className="text-[10px] text-emerald-400/90 font-mono">Finish</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setConnectSourceId(contextMenu.nodeId);
-                  setContextMenu(null);
-                }}
-                className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
-                  <span>Create Link</span>
-                </div>
-                <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
-              </button>
-            )}
+            {/* Primary Action: Create Link */}
+            <button
+              onClick={() => {
+                setConnectSourceId(contextMenu.nodeId);
+                setContextMenu(null);
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                <span>Create Link</span>
+              </div>
+              <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
+            </button>
 
             {/* Center / Focus Node */}
             <button
@@ -634,18 +684,24 @@ export const Prj1GraphCanvas: React.FC = () => {
       })()}
 
       {/* Connect mode banner */}
-      {connectSourceId && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 backdrop-blur-md text-cyan-200 text-xs shadow-lg animate-fade-in">
-          <Link2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-          <span>Hover over candidate node to validate connection (click to connect, ESC to cancel)</span>
-          <button
-            onClick={() => setConnectSourceId(null)}
-            className="ml-2 hover:text-white underline text-[11px]"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+      {connectSourceId && (() => {
+        const srcNode = nodes.find((n) => n.id === connectSourceId);
+        const srcName = srcNode ? getProperty(srcNode.properties, 'name') || srcNode.id : 'Node';
+        return (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-full bg-[#0B1220]/95 border border-cyan-500/40 backdrop-blur-md text-cyan-200 text-xs shadow-2xl animate-fade-in">
+            <Link2 className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            <span>
+              Linking from <strong className="text-white font-semibold">{srcName}</strong>: Left-click on target node to connect (ESC to cancel)
+            </span>
+            <button
+              onClick={() => setConnectSourceId(null)}
+              className="ml-2 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[11px] text-white transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Floating Color : Category Table Reference */}
       {isLegendOpen && (
@@ -751,22 +807,6 @@ export const Prj1GraphCanvas: React.FC = () => {
           <RefreshCw className="w-4 h-4" />
         </button>
 
-        {selectedNodeId && (
-          <>
-            <div className="w-[1px] h-4 bg-white/10 my-auto" />
-            <button
-              onClick={() => setConnectSourceId(selectedNodeId)}
-              title="Connect to another node (or Shift+Click target)"
-              className={`p-1.5 rounded-lg transition-colors flex items-center gap-1 text-xs px-2 ${connectSourceId
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                : 'text-slate-400 hover:text-white hover:bg-white/10'
-                }`}
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              <span>Connect</span>
-            </button>
-          </>
-        )}
 
         <div className="w-[1px] h-4 bg-white/10 my-auto" />
 
@@ -1063,14 +1103,28 @@ export const Prj1GraphCanvas: React.FC = () => {
         </div>
       )}
 
-      {/* Semantic Rejection Toast */}
-      {toastMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-rose-950/90 border border-rose-500/40 text-rose-200 text-xs shadow-2xl backdrop-blur-md animate-slide-up">
-          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-          <span>{toastMessage}</span>
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-medium shadow-2xl backdrop-blur-md animate-slide-up transition-all ${
+            toast.type === 'success'
+              ? 'bg-emerald-950/95 border border-emerald-500/50 text-emerald-100 shadow-emerald-950/50'
+              : 'bg-rose-950/95 border border-rose-500/50 text-rose-100 shadow-rose-950/50'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          )}
+          <span>{toast.message}</span>
           <button
-            onClick={() => setToastMessage(null)}
-            className="ml-2 text-rose-400 hover:text-white"
+            onClick={() => setToast(null)}
+            className={`ml-2 transition-colors ${
+              toast.type === 'success'
+                ? 'text-emerald-400 hover:text-emerald-100'
+                : 'text-rose-400 hover:text-rose-100'
+            }`}
           >
             <X className="w-3.5 h-3.5" />
           </button>

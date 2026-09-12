@@ -172,6 +172,10 @@ export async function validateRelationship(
   sourceCategory: string,
   targetCategory: string
 ): Promise<{ valid: boolean; allowedRelationshipIds: string[] }> {
+  if (!sourceCategory || !targetCategory) {
+    return { valid: false, allowedRelationshipIds: [] };
+  }
+
   const query = new URLSearchParams({
     source_category: sourceCategory,
     target_category: targetCategory
@@ -189,7 +193,8 @@ export async function validateRelationship(
     if (err instanceof ApiError && err.status === 400) {
       return { valid: false, allowedRelationshipIds: [] };
     }
-    throw err;
+    console.warn(`Validation request failed for ${sourceCategory} -> ${targetCategory}:`, err);
+    return { valid: false, allowedRelationshipIds: [] };
   }
 }
 

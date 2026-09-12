@@ -13,6 +13,7 @@ export interface CandidateValidationState {
   allowedCount?: number;
   label?: string;
   errorMessage?: string;
+  direction?: 'forward' | 'reverse';
 }
 
 export class GraphEngine {
@@ -46,9 +47,6 @@ export class GraphEngine {
 
   private particleOffset = 0;
   private justConnected = false;
-  private rightClickSourceId: string | null = null;
-  private rightClickStartPos = { x: 0, y: 0 };
-  private isRightClickDragging = false;
 
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
@@ -106,6 +104,16 @@ export class GraphEngine {
     this.candidateValidation = null;
     if (this.canvas) {
       this.canvas.style.cursor = nodeId ? 'crosshair' : 'grab';
+    }
+    if (nodeId) {
+      const target = this.findCandidateTargetNode(this.mouseWorldPos.x, this.mouseWorldPos.y, nodeId);
+      const targetId = target && target.id !== nodeId ? target.id : null;
+      if (targetId) {
+        this.connectingCandidateId = targetId;
+        if (this.onCandidateHover) {
+          this.onCandidateHover(nodeId, targetId);
+        }
+      }
     }
   }
 
@@ -263,44 +271,45 @@ export class GraphEngine {
 
   private onContextMenu(e: MouseEvent) {
     e.preventDefault();
+
     if (this.justConnected) {
       this.justConnected = false;
       return;
     }
-    if (this.isRightClickDragging) {
-      this.isRightClickDragging = false;
-      this.rightClickSourceId = null;
-      return;
-    }
-    this.rightClickSourceId = null;
 
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
 
-    // If connection mode is active, right-clicking on or near target node completes connection!
+    // If connection mode is active: right-clicking target node completes connection; empty space cancels
     if (this.connectingSourceId) {
       const targetNode =
         this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
         (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
           ? this.nodesMap.get(this.hoveredNodeId)
-          : null);
+          : null) ||
+        (() => {
+          const hit = this.hitTest(worldPos.x, worldPos.y, 24);
+          return (hit && hit.id !== this.connectingSourceId) ? hit : null;
+        })();
 
       if (targetNode && targetNode.id !== this.connectingSourceId) {
-        if (this.onConnectNodes) {
-          this.onConnectNodes(this.connectingSourceId, targetNode.id);
+        const sourceId = this.connectingSourceId;
+        const targetId = targetNode.id;
+        if (this.connectingCandidateId && this.onCandidateHover) {
+          this.onCandidateHover(sourceId, null);
         }
-        this.justConnected = true;
         this.connectingSourceId = null;
         this.connectingCandidateId = null;
         this.candidateValidation = null;
-        this.isDraggingNode = false;
-        this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
+        this.justConnected = true;
+        if (this.onConnectNodes) {
+          this.onConnectNodes(sourceId, targetId);
+        }
         return;
       } else {
-        // Right-click on empty canvas: cancel connection
         if (this.connectingCandidateId && this.onCandidateHover) {
           this.onCandidateHover(this.connectingSourceId, null);
         }
@@ -313,7 +322,10 @@ export class GraphEngine {
       }
     }
 
-    const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
+    const hitNode =
+      this.hitTest(worldPos.x, worldPos.y, 22) ||
+      (this.hoveredNodeId ? this.nodesMap.get(this.hoveredNodeId) : null);
+
     if (this.onNodeContextMenu) {
       this.onNodeContextMenu(hitNode ? hitNode.id : null, e.clientX, e.clientY);
     }
@@ -483,28 +495,40 @@ export class GraphEngine {
     const screenY = e.clientY - rect.top;
     const worldPos = this.screenToWorld(screenX, screenY);
 
-    // Active connection flow (either initiated via connect button, right-click, or HUD)
+    const isRightClick = e.button === 2 || (e.button === 0 && e.ctrlKey);
+
+    // Active connection flow (initiated strictly via right-click -> Create Link)
     if (this.connectingSourceId) {
       const targetNode =
         this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
         (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
           ? this.nodesMap.get(this.hoveredNodeId)
-          : null);
+          : null) ||
+        (() => {
+          const hit = this.hitTest(worldPos.x, worldPos.y, 24);
+          return (hit && hit.id !== this.connectingSourceId) ? hit : null;
+        })();
 
       if (targetNode && targetNode.id !== this.connectingSourceId) {
-        if (this.onConnectNodes) {
-          this.onConnectNodes(this.connectingSourceId, targetNode.id);
+        // Both left-click and right-click on candidate target node complete connection!
+        const sourceId = this.connectingSourceId;
+        const targetId = targetNode.id;
+        if (this.connectingCandidateId && this.onCandidateHover) {
+          this.onCandidateHover(sourceId, null);
         }
-        this.justConnected = true;
         this.connectingSourceId = null;
         this.connectingCandidateId = null;
         this.candidateValidation = null;
         this.isDraggingNode = false;
         this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
+        this.justConnected = true;
+        if (this.onConnectNodes) {
+          this.onConnectNodes(sourceId, targetId);
+        }
         return;
       } else {
-        // Cancel if clicked empty canvas or outside any node
+        // Click on empty canvas or on same node: cancel connection mode
         if (this.connectingCandidateId && this.onCandidateHover) {
           this.onCandidateHover(this.connectingSourceId, null);
         }
@@ -514,36 +538,20 @@ export class GraphEngine {
         this.isDraggingNode = false;
         this.dragNodeId = null;
         this.canvas.style.cursor = 'grab';
+        if (isRightClick) {
+          this.justConnected = true;
+        }
         if (this.onConnectCancel) this.onConnectCancel();
         return;
       }
     }
 
-    // Handle right-click (button 2) for right-click drag to connect
-    if (e.button === 2) {
-      const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
-      if (hitNode) {
-        this.rightClickSourceId = hitNode.id;
-        this.rightClickStartPos = { x: screenX, y: screenY };
-        this.isRightClickDragging = false;
-      } else {
-        this.rightClickSourceId = null;
-        this.isRightClickDragging = false;
-      }
+    // Only left-clicks (button 0 without ctrlKey) initiate node drag, selection, or canvas pan
+    if (isRightClick || e.button !== 0) {
       return;
     }
 
     const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
-
-    // Quick Shift + Click connection shortcut from selected node
-    if (e.shiftKey && this.selectedNodeId && hitNode && hitNode.id !== this.selectedNodeId) {
-      if (this.onConnectNodes) {
-        this.onConnectNodes(this.selectedNodeId, hitNode.id);
-      }
-      this.isDraggingNode = false;
-      this.dragNodeId = null;
-      return;
-    }
 
     if (hitNode) {
       this.isDraggingNode = true;
@@ -587,15 +595,6 @@ export class GraphEngine {
     const worldPos = this.screenToWorld(screenX, screenY);
     this.mouseWorldPos = worldPos;
 
-    // Detect right-click drag motion from node
-    if (this.rightClickSourceId) {
-      const dist = Math.hypot(screenX - this.rightClickStartPos.x, screenY - this.rightClickStartPos.y);
-      if (dist > 4) {
-        this.isRightClickDragging = true;
-        this.connectingSourceId = this.rightClickSourceId;
-      }
-    }
-
     if (this.connectingSourceId) {
       const target = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
       const targetId = (target && target.id !== this.connectingSourceId) ? target.id : null;
@@ -631,25 +630,12 @@ export class GraphEngine {
           y: worldPos.y
         });
       }
-
-      // Detect hover over candidate target node while dragging
-      const hitTarget = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.dragNodeId);
-      const targetId = (hitTarget && hitTarget.id !== this.dragNodeId) ? hitTarget.id : null;
-      if (this.connectingCandidateId !== targetId) {
-        this.connectingCandidateId = targetId;
-        if (this.onCandidateHover) {
-          this.onCandidateHover(this.dragNodeId, targetId);
-        }
-      }
-      if (this.onHoverNode) {
-        this.onHoverNode(targetId);
-      }
       return;
     } else if (this.isPanning) {
       this.camera.x = screenX - this.panStart.x;
       this.camera.y = screenY - this.panStart.y;
     } else {
-      // Hover detection for both nodes and edges
+      // Hover detection for both nodes and edges (purely for visual pointer cursor and hover state)
       const hitNode = this.hitTest(worldPos.x, worldPos.y, 14);
       if (hitNode) {
         this.hoveredEdgeId = null;
@@ -657,16 +643,6 @@ export class GraphEngine {
         this.canvas.style.cursor = 'pointer';
         if (this.onHoverNode) {
           this.onHoverNode(hitNode.id);
-        }
-
-        // If a node is selected, validate connection to this candidate node on hover!
-        if (this.selectedNodeId && hitNode.id !== this.selectedNodeId) {
-          if (this.connectingCandidateId !== hitNode.id) {
-            this.connectingCandidateId = hitNode.id;
-            if (this.onCandidateHover) {
-              this.onCandidateHover(this.selectedNodeId, hitNode.id);
-            }
-          }
         }
       } else {
         const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
@@ -676,58 +652,15 @@ export class GraphEngine {
         if (this.onHoverNode) {
           this.onHoverNode(null);
         }
-
-        if (this.connectingCandidateId) {
-          const prevSource = this.connectingSourceId || this.selectedNodeId;
-          this.connectingCandidateId = null;
-          this.candidateValidation = null;
-          if (prevSource && this.onCandidateHover) {
-            this.onCandidateHover(prevSource, null);
-          }
-        }
       }
     }
   }
 
-  private onPointerUp(e: PointerEvent) {
+  private onPointerUp(_e: PointerEvent) {
     if (this.connectingSourceId) {
-      const rect = this.canvas.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
-      const worldPos = this.screenToWorld(screenX, screenY);
-      const targetNode =
-        this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
-        (this.hoveredNodeId && this.hoveredNodeId !== this.connectingSourceId
-          ? this.nodesMap.get(this.hoveredNodeId)
-          : null);
-
-      if (targetNode && targetNode.id !== this.connectingSourceId) {
-        if (this.onConnectNodes) {
-          this.onConnectNodes(this.connectingSourceId, targetNode.id);
-        }
-        this.justConnected = true;
-      } else if (this.isRightClickDragging) {
-        // Suppress context menu if dragged and released outside
-        this.justConnected = true;
-      }
-
-      if (this.connectingCandidateId && this.onCandidateHover) {
-        this.onCandidateHover(this.connectingSourceId, null);
-      }
-      this.connectingSourceId = null;
-      this.connectingCandidateId = null;
-      this.candidateValidation = null;
-      this.rightClickSourceId = null;
-      this.isRightClickDragging = false;
-      this.isDraggingNode = false;
-      this.dragNodeId = null;
-      this.canvas.style.cursor = 'grab';
-      if (this.onConnectCancel) this.onConnectCancel();
+      // In connection mode, connection is completed on left-click (pointerdown), not on pointerup
       return;
     }
-
-    this.rightClickSourceId = null;
-    this.isRightClickDragging = false;
 
     if (this.isDraggingNode && this.dragNodeId) {
       if (this.worker) {
@@ -738,17 +671,7 @@ export class GraphEngine {
         node.fx = null;
         node.fy = null;
       }
-      // If dragged and dropped on another candidate node, complete connection!
-      if (this.connectingCandidateId && this.connectingCandidateId !== this.dragNodeId) {
-        if (this.onConnectNodes) {
-          this.onConnectNodes(this.dragNodeId, this.connectingCandidateId);
-        }
-        if (this.onCandidateHover) {
-          this.onCandidateHover(this.dragNodeId, null);
-        }
-      }
-      this.connectingCandidateId = null;
-      this.candidateValidation = null;
+      // Dragging a node simply moves its position; it NEVER creates a connection
     }
     this.isDraggingNode = false;
     this.dragNodeId = null;
@@ -881,11 +804,8 @@ export class GraphEngine {
       );
     });
 
-    // Dynamic Connection Rubberband Preview
-    const activeConnSourceId =
-      this.connectingSourceId ||
-      (this.isDraggingNode && this.connectingCandidateId ? this.dragNodeId : null) ||
-      (this.hoveredNodeId && this.selectedNodeId && this.hoveredNodeId !== this.selectedNodeId ? this.selectedNodeId : null);
+    // Dynamic Connection Rubberband Preview (active exclusively during Create Link mode)
+    const activeConnSourceId = this.connectingSourceId;
 
     if (activeConnSourceId) {
       const srcNode = this.nodesMap.get(activeConnSourceId);
@@ -937,7 +857,7 @@ export class GraphEngine {
             strokeColor = '#ef4444';
             targetRingColor = 'rgba(239, 68, 68, 0.9)';
             targetFillColor = 'rgba(239, 68, 68, 0.25)';
-            badgeText = '✕ Invalid Connection';
+            badgeText = val?.errorMessage || '✕ Invalid Connection';
             badgeBg = 'rgba(127, 29, 29, 0.95)';
             badgeBorder = '#ef4444';
           } else {
