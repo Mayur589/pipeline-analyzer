@@ -241,7 +241,7 @@ export const Prj1GraphCanvas: React.FC = () => {
         setContextMenu(null);
       }
     },
-    [nodes, edges, nodeCategories, showToast]
+    [nodes, edges, nodeCategories, showToast, setConnectSourceId]
   );
 
   const handleAttemptConnectRef = useRef(handleAttemptConnect);
