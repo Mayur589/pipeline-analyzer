@@ -68,6 +68,10 @@ export interface CreateProjectInput {
   description?: string;
 }
 
+export interface EditProjectInput {
+  name: string;
+}
+
 export interface Graph {
   projectId: string;
   nodes: Node[];

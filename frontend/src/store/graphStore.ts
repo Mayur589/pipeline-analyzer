@@ -39,6 +39,8 @@ interface GraphStoreState {
   loadProjects: () => Promise<Project[]>;
   selectProject: (projectId: string) => Promise<void>;
   createNewProject: (name: string, description?: string) => Promise<Project>;
+  updateProject: (projectId: string, name: string) => Promise<Project>;
+  deleteProject: (projectId: string) => Promise<void>;
   loadGraph: (projectIdOverride?: string) => Promise<void>;
   loadNodeTypes: () => Promise<void>;
   addNode: (input: Omit<CreateNodeInput, 'projectId'>) => Promise<Node>;
@@ -145,6 +147,65 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       console.error('Failed to create project:', error);
       set({ error: error.message || 'Failed to create project.', isLoading: false });
       throw error;
+    }
+  },
+
+  updateProject: async (projectId: string, name: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const updated = await api.editProject(projectId, name);
+      set((state) => ({
+        projects: state.projects.map((p) => (p.id === projectId ? updated : p)),
+        isLoading: false
+      }));
+      return updated;
+    } catch (error: any) {
+      console.error('Failed to update project:', error);
+      set({ error: error.message || 'Failed to update project.', isLoading: false });
+      throw error;
+    }
+  },
+
+  deleteProject: async (projectId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await api.deleteProject(projectId);
+      const remainingProjects = get().projects.filter((p) => p.id !== projectId);
+
+      if (get().projectId === projectId) {
+        if (remainingProjects.length > 0) {
+          const nextProject = remainingProjects[0];
+          set({
+            projects: remainingProjects,
+            projectId: nextProject.id,
+            selectedNodeId: null,
+            selectedEdgeId: null,
+            connectSourceId: null
+          });
+          await get().loadGraph(nextProject.id);
+        } else {
+          // If no projects remain, create a new default project
+          const defaultProj = await api.createProject('Default Security Pipeline');
+          set({
+            projects: [defaultProj],
+            projectId: defaultProj.id,
+            nodes: [],
+            edges: [],
+            selectedNodeId: null,
+            selectedEdgeId: null,
+            connectSourceId: null
+          });
+          await get().loadGraph(defaultProj.id);
+        }
+      } else {
+        set({ projects: remainingProjects });
+      }
+    } catch (error: any) {
+      console.error('Failed to delete project:', error);
+      set({ error: error.message || 'Failed to delete project.' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
     }
   },
 

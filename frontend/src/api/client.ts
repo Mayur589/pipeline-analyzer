@@ -69,10 +69,7 @@ export const getBaseUrl = (): string => {
   const metaEnv = (import.meta as unknown as { env?: Record<string, string> })?.env;
   const procEnv = (globalThis as unknown as { process?: { env?: Record<string, string> } })?.process?.env;
   const custom = metaEnv?.VITE_API_BASE_URL || procEnv?.VITE_API_BASE_URL;
-  if (custom && custom.trim()) return custom.trim();
-  // In browser, use same-origin relative URLs to leverage Vite dev proxy and ensure network tab visibility
-  if (typeof window !== 'undefined') return '';
-  return 'http://127.0.0.1:3000';
+  return custom && custom.trim() ? custom.trim() : 'http://127.0.0.1:3000';
 };
 
 
@@ -177,8 +174,8 @@ export async function validateRelationship(
   }
 
   const query = new URLSearchParams({
-    source_category: sourceCategory,
-    target_category: targetCategory
+    SourceCategory: sourceCategory,
+    TargetCategory: targetCategory
   });
 
   try {
@@ -227,6 +224,31 @@ export async function createProject(name: string): Promise<Project> {
     id: data.Id,
     name: data.Name
   };
+}
+
+/**
+ * PATCH /projects/{project_id}
+ * Edits the name of the project.
+ */
+export async function editProject(projectId: string, name: string): Promise<Project> {
+  const data = await request<BackendProject>(`/projects/${encodeURIComponent(projectId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ Name: name })
+  });
+  return {
+    id: data.Id,
+    name: data.Name
+  };
+}
+
+/**
+ * DELETE /projects/{project_id}
+ * Deletes a project and cascades all its nodes and edges.
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  await request<null>(`/projects/${encodeURIComponent(projectId)}`, {
+    method: 'DELETE'
+  });
 }
 
 /**
@@ -400,6 +422,8 @@ export const api = {
   validateRelationship,
   getProjects,
   createProject,
+  editProject,
+  deleteProject,
   getGraph,
   createNode,
   editNode,

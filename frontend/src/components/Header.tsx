@@ -9,7 +9,9 @@ import {
   Trash2,
   Check,
   Radio,
-  Loader2
+  Loader2,
+  Pencil,
+  X
 } from 'lucide-react';
 
 import { createDefaultProperties } from '../types/graph';
@@ -28,6 +30,8 @@ export const Header: React.FC = () => {
     projects,
     selectProject,
     createNewProject,
+    updateProject,
+    deleteProject,
     isLoading,
     nodeCategories
   } = useGraphStore();
@@ -38,6 +42,12 @@ export const Header: React.FC = () => {
   const [isSubmittingNewProject, setIsSubmittingNewProject] = useState(false);
   const [isPopulatingSample, setIsPopulatingSample] = useState(false);
 
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState('');
+  const [isSubmittingEditProject, setIsSubmittingEditProject] = useState(false);
+  const [confirmDeleteProjectId, setConfirmDeleteProjectId] = useState<string | null>(null);
+  const [isSubmittingDeleteProject, setIsSubmittingDeleteProject] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Close dropdown on outside click
@@ -46,6 +56,8 @@ export const Header: React.FC = () => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as HTMLElement)) {
         setIsProjectDropdownOpen(false);
         setIsCreatingProject(false);
+        setEditingProjectId(null);
+        setConfirmDeleteProjectId(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -68,6 +80,41 @@ export const Header: React.FC = () => {
       console.error('Failed to create project:', err);
     } finally {
       setIsSubmittingNewProject(false);
+    }
+  };
+
+  const handleStartEditProject = (p: { id: string; name: string }, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteProjectId(null);
+    setEditingProjectId(p.id);
+    setEditingProjectName(p.name);
+  };
+
+  const handleEditProjectSubmit = async (targetProjectId: string, e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingProjectName.trim()) return;
+
+    setIsSubmittingEditProject(true);
+    try {
+      await updateProject(targetProjectId, editingProjectName.trim());
+      setEditingProjectId(null);
+    } catch (err) {
+      console.error('Failed to update project:', err);
+    } finally {
+      setIsSubmittingEditProject(false);
+    }
+  };
+
+  const handleDeleteProject = async (targetProjectId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsSubmittingDeleteProject(true);
+    try {
+      await deleteProject(targetProjectId);
+      setConfirmDeleteProjectId(null);
+    } catch (err) {
+      console.error('Failed to delete project:', err);
+    } finally {
+      setIsSubmittingDeleteProject(false);
     }
   };
 
@@ -213,30 +260,138 @@ export const Header: React.FC = () => {
 
           {/* Dropdown Menu */}
           {isProjectDropdownOpen && (
-            <div className="absolute left-0 mt-2 w-64 rounded-xl bg-[#0F172A] border border-white/10 shadow-2xl shadow-black/60 p-2 z-50 text-xs">
+            <div className="absolute left-0 mt-2 w-72 rounded-xl bg-[#0F172A] border border-white/10 shadow-2xl shadow-black/60 p-2 z-50 text-xs">
               <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 border-b border-white/5">
                 Backend Projects ({projects.length})
               </div>
 
-              <div className="max-h-48 overflow-y-auto py-1 space-y-0.5 custom-scrollbar">
+              <div className="max-h-56 overflow-y-auto py-1 space-y-0.5 custom-scrollbar">
                 {projects.map((p) => {
                   const isSelected = p.id === projectId;
+                  const isEditing = editingProjectId === p.id;
+                  const isConfirmingDelete = confirmDeleteProjectId === p.id;
+
                   return (
-                    <button
+                    <div
                       key={p.id}
-                      onClick={() => {
-                        selectProject(p.id);
-                        setIsProjectDropdownOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                      className={`group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors ${
                         isSelected
                           ? 'bg-cyan-500/15 text-cyan-300 font-medium'
                           : 'text-slate-300 hover:bg-white/5 hover:text-white'
                       }`}
                     >
-                      <span className="truncate">{p.name}</span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
-                    </button>
+                      {isEditing ? (
+                        <form
+                          onSubmit={(e) => handleEditProjectSubmit(p.id, e)}
+                          className="w-full flex items-center gap-1.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            value={editingProjectName}
+                            onChange={(e) => setEditingProjectName(e.target.value)}
+                            autoFocus
+                            disabled={isSubmittingEditProject}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setEditingProjectId(null);
+                              }
+                            }}
+                            className="flex-1 min-w-0 px-2 py-0.5 rounded bg-black/40 border border-cyan-500/50 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                          />
+                          <button
+                            type="submit"
+                            disabled={isSubmittingEditProject || !editingProjectName.trim()}
+                            className="p-1 rounded text-cyan-400 hover:bg-cyan-500/20 disabled:opacity-40 transition-colors cursor-pointer"
+                            title="Save name (Enter)"
+                          >
+                            {isSubmittingEditProject ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingProjectId(null)}
+                            className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+                            title="Cancel (Esc)"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </form>
+                      ) : isConfirmingDelete ? (
+                        <div
+                          className="w-full flex items-center justify-between gap-1.5 py-0.5"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span className="text-[11px] text-rose-400 font-medium truncate flex items-center gap-1">
+                            <Trash2 className="w-3 h-3 shrink-0" />
+                            Delete project?
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              disabled={isSubmittingDeleteProject}
+                              onClick={(e) => handleDeleteProject(p.id, e)}
+                              className="px-2 py-0.5 rounded text-[11px] bg-rose-500 hover:bg-rose-600 text-white font-medium transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Confirm delete"
+                            >
+                              {isSubmittingDeleteProject ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                'Delete'
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteProjectId(null)}
+                              className="p-1 rounded text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+                              title="Cancel"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              selectProject(p.id);
+                              setIsProjectDropdownOpen(false);
+                            }}
+                            className="flex-1 flex items-center gap-2 min-w-0 text-left cursor-pointer"
+                          >
+                            <span className="truncate">{p.name}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                          </button>
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => handleStartEditProject(p, e)}
+                              className="p-1 rounded text-slate-400 hover:text-cyan-400 hover:bg-white/10 transition-colors cursor-pointer"
+                              title="Rename project"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmDeleteProjectId(p.id);
+                                setEditingProjectId(null);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                              title="Delete project"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   );
                 })}
               </div>

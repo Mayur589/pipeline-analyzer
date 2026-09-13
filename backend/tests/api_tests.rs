@@ -11,6 +11,7 @@ use backend::CreateNode;
 use backend::CreateProject;
 use backend::EditEdge;
 use backend::EditNode;
+use backend::EditProject;
 use backend::ValidateRelationshipQuery;
 use backend::create_edge;
 use backend::create_node;
@@ -18,8 +19,10 @@ use backend::create_project;
 use backend::database::DatabaseStore;
 use backend::delete_edge;
 use backend::delete_node;
+use backend::delete_project;
 use backend::edit_edge;
 use backend::edit_node;
+use backend::edit_project;
 use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
@@ -116,10 +119,33 @@ async fn test_projects_crud() {
     assert!(graph.nodes.is_empty());
     assert!(graph.edges.is_empty());
 
-    let err = get_graph(State(state), Path(String::from("nonexistent")))
+    let err = get_graph(State(state.clone()), Path(String::from("nonexistent")))
         .await
         .expect_err("nonexistent project graph should 404");
     assert!(matches!(err, ApiError::ProjectNotFound));
+
+    // Test edit_project
+    let Json(edited) = edit_project(
+        State(state.clone()),
+        Path(created.id.clone()),
+        Json(EditProject {
+            name: String::from("Updated Pipeline Guard"),
+        }),
+    )
+    .await
+    .expect("edit project should succeed");
+    assert_eq!(edited.id, created.id);
+    assert_eq!(edited.name, "Updated Pipeline Guard");
+
+    // Test delete_project
+    let Json(()) = delete_project(State(state.clone()), Path(created.id.clone()))
+        .await
+        .expect("delete project should succeed");
+
+    let Json(projects_after_delete) = get_projects(State(state))
+        .await
+        .expect("get projects should succeed");
+    assert!(projects_after_delete.is_empty());
 }
 
 #[tokio::test]

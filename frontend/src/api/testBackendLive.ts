@@ -4,6 +4,8 @@ import {
   validateRelationship,
   getProjects,
   createProject,
+  editProject,
+  deleteProject,
   getGraph,
   createNode,
   editNode,
@@ -57,24 +59,32 @@ async function runLiveBackendTests() {
   console.log(`   ✓ Created project: id=${testProject.id}, name="${testProject.name}"`);
   if (!testProject.id) throw new Error('Failed to create project');
 
-  // 5. GET /projects
-  console.log('5. Testing GET /projects');
+  // 5. PATCH /projects/{project_id}
+  console.log(`5. Testing PATCH /projects/${testProject.id}`);
+  const updatedProject = await editProject(testProject.id, `${testProject.name} (Renamed)`);
+  console.log(`   ✓ Renamed project: id=${updatedProject.id}, name="${updatedProject.name}"`);
+  if (updatedProject.name !== `${testProject.name} (Renamed)`) {
+    throw new Error('Failed to edit project name');
+  }
+
+  // 6. GET /projects
+  console.log('6. Testing GET /projects');
   const projects = await getProjects();
   console.log(`   ✓ Listed ${projects.length} projects.`);
   if (!projects.find((p) => p.id === testProject.id)) {
     throw new Error('Created project not found in GET /projects list');
   }
 
-  // 6. GET /projects/{project_id}/graph (Initial)
-  console.log(`6. Testing GET /projects/${testProject.id}/graph (initial)`);
+  // 7. GET /projects/{project_id}/graph (Initial)
+  console.log(`7. Testing GET /projects/${testProject.id}/graph (initial)`);
   const initialGraph = await getGraph(testProject.id);
   console.log(`   ✓ Graph fetched: nodes=${initialGraph.nodes.length}, edges=${initialGraph.edges.length}`);
   if (initialGraph.nodes.length !== 0 || initialGraph.edges.length !== 0) {
     throw new Error('Initial graph should be empty');
   }
 
-  // 7. POST /projects/{project_id}/nodes (Node 1)
-  console.log(`7. Testing POST /projects/${testProject.id}/nodes (Node 1: identity_people)`);
+  // 8. POST /projects/{project_id}/nodes (Node 1)
+  console.log(`8. Testing POST /projects/${testProject.id}/nodes (Node 1: identity_people)`);
   const node1 = await createNode(testProject.id, 'identity_people', {
     name: 'Alice Security Lead',
     role: 'Maintainer',
@@ -93,8 +103,8 @@ async function runLiveBackendTests() {
   console.log(`   ✓ Created Node 2: id=${node2.id}, category=${node2.categoryId}`);
   if (!node2.id) throw new Error('Failed to create Node 2');
 
-  // 8. PATCH /projects/{project_id}/nodes/{node_id}
-  console.log(`8. Testing PATCH /projects/${testProject.id}/nodes/${node1.id}`);
+  // 9. PATCH /projects/{project_id}/nodes/{node_id}
+  console.log(`9. Testing PATCH /projects/${testProject.id}/nodes/${node1.id}`);
   const updatedNode1 = await editNode(testProject.id, node1.id, {
     name: 'Alice Principal Lead',
     role: 'DevOps Admin',
@@ -105,16 +115,16 @@ async function runLiveBackendTests() {
     throw new Error('Node property was not updated');
   }
 
-  // 9. POST /projects/{project_id}/edges
-  console.log(`9. Testing POST /projects/${testProject.id}/edges`);
+  // 10. POST /projects/{project_id}/edges
+  console.log(`10. Testing POST /projects/${testProject.id}/edges`);
   const edge = await createEdge(testProject.id, node1.id, node2.id, 'contributes_to');
   console.log(`   ✓ Created Edge: id=${edge.id}, ${edge.sourceNodeId} -[${edge.relationshipId}]-> ${edge.targetNodeId}`);
   if (!edge.id || edge.relationshipId !== 'contributes_to') {
     throw new Error('Failed to create edge');
   }
 
-  // 10. PATCH /projects/{project_id}/edges/{edge_id}
-  console.log(`10. Testing PATCH /projects/${testProject.id}/edges/${edge.id}`);
+  // 11. PATCH /projects/{project_id}/edges/{edge_id}
+  console.log(`11. Testing PATCH /projects/${testProject.id}/edges/${edge.id}`);
   const updatedEdge = await editEdge(testProject.id, edge.id, 'maintains');
   console.log(`   ✓ Updated Edge: id=${updatedEdge.id}, relationship=${updatedEdge.relationshipId}`);
   if (updatedEdge.relationshipId !== 'maintains') {
@@ -128,25 +138,34 @@ async function runLiveBackendTests() {
     throw new Error('Graph state does not match expected node/edge count');
   }
 
-  // 11. DELETE /projects/{project_id}/edges/{edge_id}
-  console.log(`11. Testing DELETE /projects/${testProject.id}/edges/${edge.id}`);
+  // 12. DELETE /projects/{project_id}/edges/{edge_id}
+  console.log(`12. Testing DELETE /projects/${testProject.id}/edges/${edge.id}`);
   await deleteEdge(testProject.id, edge.id);
   console.log(`   ✓ Edge ${edge.id} deleted.`);
 
-  // 12. DELETE /projects/{project_id}/nodes/{node_id}
-  console.log(`12. Testing DELETE /projects/${testProject.id}/nodes/{node_id}`);
+  // 13. DELETE /projects/{project_id}/nodes/{node_id}
+  console.log(`13. Testing DELETE /projects/${testProject.id}/nodes/{node_id}`);
   await deleteNode(testProject.id, node1.id);
   await deleteNode(testProject.id, node2.id);
   console.log(`   ✓ Nodes ${node1.id} and ${node2.id} deleted.`);
 
-  // Final graph check
-  const finalGraph = await getGraph(testProject.id);
-  console.log(`   ✓ Final graph verified empty: nodes=${finalGraph.nodes.length}, edges=${finalGraph.edges.length}`);
-  if (finalGraph.nodes.length !== 0 || finalGraph.edges.length !== 0) {
-    throw new Error('Final graph should be empty');
+  // Graph check
+  const graphAfterNodeDelete = await getGraph(testProject.id);
+  console.log(`   ✓ Graph verified empty: nodes=${graphAfterNodeDelete.nodes.length}, edges=${graphAfterNodeDelete.edges.length}`);
+  if (graphAfterNodeDelete.nodes.length !== 0 || graphAfterNodeDelete.edges.length !== 0) {
+    throw new Error('Graph should be empty');
   }
 
-  console.log('\n🌟 ALL 11 REST API ENDPOINTS TESTED AND VERIFIED SUCCESSFULLY AGAINST 127.0.0.1:3000!\n');
+  // 14. DELETE /projects/{project_id}
+  console.log(`14. Testing DELETE /projects/${testProject.id}`);
+  await deleteProject(testProject.id);
+  const remainingProjects = await getProjects();
+  if (remainingProjects.some((p) => p.id === testProject.id)) {
+    throw new Error('Project should be deleted from backend');
+  }
+  console.log(`   ✓ Project ${testProject.id} successfully deleted from backend.`);
+
+  console.log('\n🌟 ALL 13 REST API ENDPOINTS TESTED AND VERIFIED SUCCESSFULLY AGAINST 127.0.0.1:3000!\n');
 }
 
 runLiveBackendTests().catch((err) => {
