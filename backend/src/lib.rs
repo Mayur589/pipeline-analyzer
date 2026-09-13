@@ -181,6 +181,87 @@ pub async fn create_project(
     Ok(Json(result))
 }
 
+/// Edits the name of the project of the given id
+///
+/// # Errors
+///
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist.
+pub async fn edit_project(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(project): Json<EditProject>,
+) -> ApiResult<Project> {
+    let mut updated = None;
+
+    let _ = state
+        .db
+        .update(|db| {
+            if let Some(existing) = db.projects.iter_mut().find(|p| p.id == project_id) {
+                existing.name = project.name;
+                updated = Some(existing.clone());
+            }
+        })
+        .await;
+
+    updated.map_or(Err(ApiError::ProjectNotFound), |project| Ok(Json(project)))
+}
+
+/// Deletes a project with the given id
+///
+/// # Errors
+///
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist.
+pub async fn delete_project(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+) -> ApiResult<()> {
+    let mut found = false;
+
+    let _ = state
+        .db
+        .update(|db| {
+            if let Some(pos) = db.projects.iter().position(|p| p.id == project_id) {
+                db.projects.remove(pos);
+                found = true;
+
+                // Remove all nodes belonging to the project.
+                let removed_nodes: Vec<String> = db
+                    .node_projects
+                    .iter()
+                    .filter(|(_, project)| *project == &project_id)
+                    .map(|(node_id, _)| node_id.clone())
+                    .collect();
+
+                db.nodes.retain(|node| !removed_nodes.contains(&node.id));
+
+                for node_id in &removed_nodes {
+                    db.node_projects.remove(node_id);
+                }
+
+                // Remove all edges belonging to the project.
+                let removed_edges: Vec<String> = db
+                    .edge_projects
+                    .iter()
+                    .filter(|(_, project)| *project == &project_id)
+                    .map(|(edge_id, _)| edge_id.clone())
+                    .collect();
+
+                db.edges.retain(|edge| !removed_edges.contains(&edge.id));
+
+                for edge_id in removed_edges {
+                    db.edge_projects.remove(&edge_id);
+                }
+            }
+        })
+        .await;
+
+    if found {
+        Ok(Json(()))
+    } else {
+        Err(ApiError::ProjectNotFound)
+    }
+}
+
 /// Creates a new node within the specified project and returns the persisted node.
 ///
 /// # Errors
@@ -491,57 +572,45 @@ pub async fn delete_edge(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateProject {
-    #[serde(alias = "name")]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct EditProject {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidateRelationshipQuery {
-    #[serde(alias = "sourceCategory", alias = "source_category")]
     pub source_category: String,
-    #[serde(alias = "targetCategory", alias = "target_category")]
     pub target_category: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateNode {
-    #[serde(alias = "categoryId", alias = "category_id")]
     pub category_id: String,
-    #[serde(alias = "properties")]
     pub properties: NodeProperties,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EditNode {
-    #[serde(alias = "properties")]
     pub properties: NodeProperties,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateEdge {
-    #[serde(alias = "sourceNodeId", alias = "source_node_id")]
     pub source_node_id: String,
-    #[serde(alias = "targetNodeId", alias = "target_node_id")]
     pub target_node_id: String,
-    #[serde(
-        alias = "relationshipId",
-        alias = "relationship_id",
-        alias = "relationship"
-    )]
     pub relationship: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EditEdge {
-    #[serde(
-        alias = "relationshipId",
-        alias = "relationship_id",
-        alias = "relationship"
-    )]
     pub relationship: String,
 }

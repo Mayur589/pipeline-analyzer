@@ -11,8 +11,10 @@ use backend::create_project;
 use backend::database::DatabaseStore;
 use backend::delete_edge;
 use backend::delete_node;
+use backend::delete_project;
 use backend::edit_edge;
 use backend::edit_node;
+use backend::edit_project;
 use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
@@ -41,6 +43,7 @@ async fn main() {
     #[rustfmt::skip]
     let project_routes = Router::new()
         .route("/", get(get_projects).post(create_project))
+        .route("/{project_id}", patch(edit_project).delete(delete_project))
         .route("/{project_id}/graph", get(get_graph))
         .route("/{project_id}/nodes", post(create_node))
         .route("/{project_id}/nodes/{node_id}", patch(edit_node).delete(delete_node))
