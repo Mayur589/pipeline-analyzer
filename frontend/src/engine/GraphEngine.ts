@@ -256,6 +256,48 @@ export class GraphEngine {
     this.camera = { x: width / 2, y: height / 2, zoom: 1.0 };
   }
 
+  public zoomToFit(padding = 90) {
+    if (this.nodes.length === 0) {
+      this.centerCamera();
+      return;
+    }
+
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let validCount = 0;
+
+    this.nodes.forEach(n => {
+      if (n.x !== undefined && n.y !== undefined) {
+        minX = Math.min(minX, n.x);
+        maxX = Math.max(maxX, n.x);
+        minY = Math.min(minY, n.y);
+        maxY = Math.max(maxY, n.y);
+        validCount++;
+      }
+    });
+
+    if (validCount === 0) {
+      this.centerCamera();
+      return;
+    }
+
+    const width = this.canvas.clientWidth || window.innerWidth;
+    const height = this.canvas.clientHeight || window.innerHeight;
+
+    const graphWidth = Math.max(80, maxX - minX);
+    const graphHeight = Math.max(80, maxY - minY);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    const scaleX = (width - padding * 2) / graphWidth;
+    const scaleY = (height - padding * 2) / graphHeight;
+    const fitZoom = Math.min(1.6, Math.max(0.35, Math.min(scaleX, scaleY)));
+
+    this.camera.zoom = fitZoom;
+    this.camera.x = width / 2 - centerX * fitZoom;
+    this.camera.y = height / 2 - centerY * fitZoom;
+  }
+
   public zoomIn(factor = 1.3) {
     const width = this.canvas.clientWidth || window.innerWidth;
     const height = this.canvas.clientHeight || window.innerHeight;
@@ -806,7 +848,16 @@ export class GraphEngine {
       }
     }
 
-    // Draw Edges
+    // Draw Edges with multi-edge / bidirectional pairing support
+    const edgePairCount = new Map<string, number>();
+    const edgePairIndex = new Map<string, number>();
+    this.edges.forEach(e => {
+      const s = typeof e.source === 'object' ? (e.source as any).id : e.source;
+      const t = typeof e.target === 'object' ? (e.target as any).id : e.target;
+      const key = s < t ? `${s}---${t}` : `${t}---${s}`;
+      edgePairCount.set(key, (edgePairCount.get(key) || 0) + 1);
+    });
+
     this.edges.forEach(edge => {
       const srcId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source;
       const tgtId = typeof edge.target === 'object' ? (edge.target as any).id : edge.target;
@@ -851,6 +902,11 @@ export class GraphEngine {
         }
       }
 
+      const pairKey = srcId < tgtId ? `${srcId}---${tgtId}` : `${tgtId}---${srcId}`;
+      const totalBetween = edgePairCount.get(pairKey) || 1;
+      const currentIdx = edgePairIndex.get(pairKey) || 0;
+      edgePairIndex.set(pairKey, currentIdx + 1);
+
       this.drawEdge(
         srcNode,
         tgtNode,
@@ -859,7 +915,9 @@ export class GraphEngine {
         isConnectedToFocus && Boolean(activeFocusId),
         simStep,
         isEdgeActiveHop,
-        edgeActiveFraction
+        edgeActiveFraction,
+        totalBetween,
+        currentIdx
       );
     });
 
@@ -1144,7 +1202,9 @@ export class GraphEngine {
     isHighlighted: boolean,
     simStep?: AttackStep | null,
     isEdgeActiveHop?: boolean,
-    edgeActiveFraction?: number
+    edgeActiveFraction?: number,
+    totalBetween: number = 1,
+    currentIdx: number = 0
   ) {
     const x1 = src.x ?? 0;
     const y1 = src.y ?? 0;
@@ -1156,9 +1216,9 @@ export class GraphEngine {
     const isSimulated = Boolean(simStep);
 
     this.ctx.save();
-    this.ctx.globalAlpha = isDimmed ? 0.18 : (isSelected || isHovered || isSimulated ? 1.0 : (isHighlighted ? 0.95 : 0.7));
+    this.ctx.globalAlpha = isDimmed ? 0.16 : (isSelected || isHovered || isSimulated ? 1.0 : (isHighlighted ? 0.95 : 0.78));
 
-    let strokeColor = edge.color || '#475569';
+    let strokeColor = edge.color || '#38bdf8';
     if (isSimulated && simStep) {
       strokeColor = OUTCOME_COLORS[simStep.outcome] || '#ef4444';
     } else if (isSelected) {
@@ -1169,17 +1229,17 @@ export class GraphEngine {
       strokeColor = '#818cf8';
     }
 
-    let lineWidth = this.displayConfig.linkThickness * 1.2;
+    let lineWidth = Math.max(1.6, this.displayConfig.linkThickness * 1.2);
     if (isEdgeActiveHop) {
-      lineWidth = Math.max(3.5, this.displayConfig.linkThickness * 2.8);
+      lineWidth = Math.max(3.5, this.displayConfig.linkThickness * 2.5);
     } else if (isSimulated) {
-      lineWidth = Math.max(2.2, this.displayConfig.linkThickness * 1.8);
+      lineWidth = Math.max(2.2, this.displayConfig.linkThickness * 1.6);
     } else if (isSelected) {
       lineWidth = 2.8;
     } else if (isHovered) {
       lineWidth = 2.2;
     } else if (isHighlighted) {
-      lineWidth = this.displayConfig.linkThickness * 1.8;
+      lineWidth = this.displayConfig.linkThickness * 1.6;
     }
 
     this.ctx.strokeStyle = strokeColor;
@@ -1193,11 +1253,16 @@ export class GraphEngine {
 
     let midX = (x1 + x2) / 2;
     let midY = (y1 + y2) / 2;
+    const isCurved = this.displayConfig.curvedEdges || totalBetween > 1;
 
-    if (this.displayConfig.curvedEdges) {
+    if (isCurved) {
       const dx = x2 - x1;
       const dy = y2 - y1;
-      const curvature = 0.15;
+      let curvature = 0.15;
+      if (totalBetween > 1) {
+        const sign = currentIdx % 2 === 0 ? 1 : -1;
+        curvature = sign * (0.16 + Math.floor(currentIdx / 2) * 0.12);
+      }
       midX = (x1 + x2) / 2 - dy * curvature;
       midY = (y1 + y2) / 2 + dx * curvature;
 
@@ -1212,49 +1277,69 @@ export class GraphEngine {
       this.ctx.stroke();
     }
 
-    // Directional Arrowheads
+    // Directional Arrowheads (sleek aerospace chevron)
     if (this.displayConfig.showArrows || isSimulated) {
       const tgtRadius = (tgt.size || 6) * this.displayConfig.nodeScale;
-      const angle = Math.atan2(y2 - midY, x2 - midX);
-      const arrowX = x2 - Math.cos(angle) * (tgtRadius + 4);
-      const arrowY = y2 - Math.sin(angle) * (tgtRadius + 4);
+      const angle = isCurved ? Math.atan2(y2 - midY, x2 - midX) : Math.atan2(y2 - y1, x2 - x1);
+      const arrowDistance = tgtRadius + 4;
+      const arrowX = x2 - Math.cos(angle) * arrowDistance;
+      const arrowY = y2 - Math.sin(angle) * arrowDistance;
 
-      const arrowLength = isEdgeActiveHop ? 9 : 7;
+      const arrowLength = isEdgeActiveHop ? 10 : 8;
+      const arrowSpread = isEdgeActiveHop ? 5 : 4;
       this.ctx.fillStyle = strokeColor;
       this.ctx.beginPath();
       this.ctx.moveTo(arrowX, arrowY);
       this.ctx.lineTo(
-        arrowX - arrowLength * Math.cos(angle - Math.PI / 6),
-        arrowY - arrowLength * Math.sin(angle - Math.PI / 6)
+        arrowX - arrowLength * Math.cos(angle) + arrowSpread * Math.sin(angle),
+        arrowY - arrowLength * Math.sin(angle) - arrowSpread * Math.cos(angle)
       );
       this.ctx.lineTo(
-        arrowX - arrowLength * Math.cos(angle + Math.PI / 6),
-        arrowY - arrowLength * Math.sin(angle + Math.PI / 6)
+        arrowX - arrowLength * 0.7 * Math.cos(angle),
+        arrowY - arrowLength * 0.7 * Math.sin(angle)
+      );
+      this.ctx.lineTo(
+        arrowX - arrowLength * Math.cos(angle) - arrowSpread * Math.sin(angle),
+        arrowY - arrowLength * Math.sin(angle) + arrowSpread * Math.cos(angle)
       );
       this.ctx.closePath();
       this.ctx.fill();
     }
 
-    // Edge Label Pill (ONLY when selected or hovered, to keep canvas completely uncluttered)
-    const shouldShowLabel = isSelected || isHovered || (this.displayConfig.showLabels && this.camera.zoom >= 1.2);
+    // Edge Relationship Label Pill:
+    // Appears when:
+    // 1. Zoomed in close (camera.zoom >= 1.35)
+    // 2. The edge itself is hovered or selected
+    // 3. Either connected endpoint node is hovered or selected
+    // 4. showEdgeLabels is explicitly toggled on
+    const activeFocusId = this.hoveredNodeId || this.selectedNodeId;
+    const isConnectedToFocus = activeFocusId ? (src.id === activeFocusId || tgt.id === activeFocusId) : false;
+    const isDeepZoomed = this.camera.zoom >= 1.35;
+    const shouldShowLabel =
+      isSelected ||
+      isHovered ||
+      isConnectedToFocus ||
+      (this.displayConfig.showLabels && isDeepZoomed) ||
+      Boolean(this.displayConfig.showEdgeLabels);
     const displayLabel = isSimulated && simStep && (isSelected || isHovered)
       ? `${edge.label || ''} [${simStep.outcome}]`
       : edge.label;
 
     if (shouldShowLabel && displayLabel) {
+      const pillColor = edge.relationshipColor || strokeColor;
       this.ctx.save();
       this.ctx.font = isSelected || isHovered ? 'bold 11px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
       const textWidth = this.ctx.measureText(displayLabel).width;
       this.ctx.fillStyle = isSelected
-        ? 'rgba(8, 47, 73, 0.95)'
-        : (isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)');
+        ? 'rgba(8, 47, 73, 0.96)'
+        : (isHovered ? 'rgba(15, 23, 42, 0.96)' : 'rgba(11, 18, 32, 0.92)');
       this.ctx.beginPath();
       this.ctx.roundRect(midX - textWidth / 2 - 6, midY - 10, textWidth + 12, 20, 5);
       this.ctx.fill();
-      this.ctx.strokeStyle = strokeColor;
-      this.ctx.lineWidth = isSelected || isHovered ? 1.5 : 0.8;
+      this.ctx.strokeStyle = isSelected || isHovered ? pillColor : `${pillColor}aa`;
+      this.ctx.lineWidth = isSelected || isHovered ? 1.5 : 0.9;
       this.ctx.stroke();
-      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : '#cbd5e1');
+      this.ctx.fillStyle = isSelected ? '#ffffff' : (isHovered ? '#ffffff' : pillColor);
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillText(displayLabel, midX, midY);
@@ -1266,7 +1351,7 @@ export class GraphEngine {
       const tPulse = edgeActiveFraction;
       let pulseX: number, pulseY: number;
 
-      if (this.displayConfig.curvedEdges) {
+      if (isCurved) {
         pulseX = (1 - tPulse) * (1 - tPulse) * x1 + 2 * (1 - tPulse) * tPulse * midX + tPulse * tPulse * x2;
         pulseY = (1 - tPulse) * (1 - tPulse) * y1 + 2 * (1 - tPulse) * tPulse * midY + tPulse * tPulse * y2;
       } else {
@@ -1285,12 +1370,12 @@ export class GraphEngine {
       this.ctx.fill();
     }
 
-    // Animated Particles (along breached or normal links)
+    // Animated Particles (along breached or normal links with luminous glow)
     if ((this.displayConfig.animateParticles || isSimulated) && !isDimmed) {
       const t = this.particleOffset;
       let px: number, py: number;
 
-      if (this.displayConfig.curvedEdges) {
+      if (isCurved) {
         px = (1 - t) * (1 - t) * x1 + 2 * (1 - t) * t * midX + t * t * x2;
         py = (1 - t) * (1 - t) * y1 + 2 * (1 - t) * t * midY + t * t * y2;
       } else {
@@ -1299,14 +1384,17 @@ export class GraphEngine {
       }
 
       this.ctx.beginPath();
-      const pRadius = isSimulated ? 2.8 : 2.0;
+      const pRadius = isSimulated ? 2.8 : 2.2;
       this.ctx.arc(px, py, pRadius, 0, Math.PI * 2);
       this.ctx.fillStyle = isSimulated
         ? strokeColor
         : (isSelected
           ? '#38bdf8'
-          : (isHighlighted ? '#a5b4fc' : 'rgba(148, 163, 184, 0.7)'));
+          : (isHighlighted ? '#a5b4fc' : strokeColor));
+      this.ctx.shadowColor = strokeColor;
+      this.ctx.shadowBlur = 4;
       this.ctx.fill();
+      this.ctx.shadowBlur = 0;
     }
 
     this.ctx.restore();

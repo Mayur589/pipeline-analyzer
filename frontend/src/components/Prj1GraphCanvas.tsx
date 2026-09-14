@@ -13,7 +13,8 @@ import type {
 import { getProperty, createDefaultProperties } from '../types/graph';
 import {
   getRelationshipGroupInfo,
-  formatRelationshipLabel
+  formatRelationshipLabel,
+  getRelationshipColor
 } from '../types/graph';
 import type { RelationshipDefinition } from '../types/graph';
 import { validateRelationship } from '../api/client';
@@ -23,25 +24,36 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  ShieldAlert
+  ShieldAlert,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCcw,
+  Compass,
+  Navigation,
+  Layers,
+  Tag
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
-  repulsion: -600,
+  repulsion: -420,
   linkDistance: 190,
-  linkStrength: 0.35,
-  gravity: 0.02,
-  collisionRadius: 36,
-  damping: 0.42,
-  enabled: true
+  linkStrength: 0.65,
+  gravity: 0.035,
+  collisionRadius: 55,
+  damping: 0.38,
+  enabled: true,
+  unconnectedRepulsion: -280,
+  unconnectedGravity: 0.04
 };
 
 const DEFAULT_DISPLAY: DisplayConfig = {
   showLabels: true,
-  labelSize: 13,
-  linkThickness: 1.1,
-  curvedEdges: false, // Clean straight lines as requested
-  showArrows: false,
+  showEdgeLabels: false,
+  labelSize: 11.5,
+  linkThickness: 1.8,
+  curvedEdges: false,
+  showArrows: true,
   animateParticles: true,
   colorBy: 'type',
   nodeScale: 1.0,
@@ -63,7 +75,7 @@ export const Prj1GraphCanvas: React.FC = () => {
   const workerRef = useRef<Worker | null>(null);
 
   const [physicsConfig] = useState<PhysicsConfig>(DEFAULT_PHYSICS);
-  const [displayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY);
+  const [displayConfig, setDisplayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY);
   const [filterConfig] = useState<FilterConfig>(DEFAULT_FILTER);
   const [hoveredNodeInfo, setHoveredNodeInfo] = useState<{ id: string; x: number; y: number } | null>(null);
   const hoveredNodeId = hoveredNodeInfo?.id || null;
@@ -128,7 +140,7 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const gEdges: GraphEdge[] = edges.map((e) => {
       const label = formatRelationshipLabel(e.relationshipId);
-      const color = '#475569';
+      const relColor = getRelationshipColor(e.relationshipId);
 
       return {
         id: e.id,
@@ -136,8 +148,9 @@ export const Prj1GraphCanvas: React.FC = () => {
         target: e.targetNodeId,
         label,
         type: 'directional',
-        weight: 1.5,
-        color
+        weight: 1.8,
+        color: '#64748b',
+        relationshipColor: relColor
       };
     });
 
@@ -857,6 +870,94 @@ export const Prj1GraphCanvas: React.FC = () => {
           </button>
         </div>
       )}
+      {/* Floating Canvas Quick Controls */}
+      <div className="absolute bottom-5 left-5 z-20 flex items-center gap-1 p-1 rounded-xl bg-[#0F172A]/90 backdrop-blur-md border border-white/10 shadow-xl text-slate-300">
+        <button
+          type="button"
+          onClick={() => engineRef.current?.zoomIn()}
+          className="p-1.5 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+          title="Zoom In (+)"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => engineRef.current?.zoomOut()}
+          className="p-1.5 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+          title="Zoom Out (-)"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => engineRef.current?.zoomToFit()}
+          className="p-1.5 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+          title="Zoom to Fit all nodes"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => engineRef.current?.centerCamera()}
+          className="p-1.5 rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+          title="Reset Camera Center"
+        >
+          <Compass className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (workerRef.current) {
+              workerRef.current.postMessage({ type: 'reheat' });
+            }
+          }}
+          className="p-1.5 rounded-lg hover:bg-white/10 hover:text-cyan-400 transition-colors cursor-pointer"
+          title="Reheat & Relax Layout"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+
+        <div className="h-4 w-px bg-white/10 mx-0.5" />
+
+        <button
+          type="button"
+          onClick={() => {
+            setDisplayConfig(prev => ({ ...prev, showArrows: !prev.showArrows }));
+          }}
+          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+            displayConfig.showArrows ? 'text-cyan-400 bg-cyan-500/15' : 'hover:bg-white/10 hover:text-white'
+          }`}
+          title={displayConfig.showArrows ? 'Hide Arrowheads' : 'Show Arrowheads'}
+        >
+          <Navigation className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDisplayConfig(prev => ({ ...prev, curvedEdges: !prev.curvedEdges }));
+          }}
+          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+            displayConfig.curvedEdges ? 'text-cyan-400 bg-cyan-500/15' : 'hover:bg-white/10 hover:text-white'
+          }`}
+          title={displayConfig.curvedEdges ? 'Curved Lines: ON' : 'Straight Lines: ON'}
+        >
+          <Layers className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDisplayConfig(prev => ({ ...prev, showEdgeLabels: !prev.showEdgeLabels }));
+          }}
+          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+            displayConfig.showEdgeLabels ? 'text-cyan-400 bg-cyan-500/15' : 'hover:bg-white/10 hover:text-white'
+          }`}
+          title={displayConfig.showEdgeLabels ? 'Always Show Edge Labels: ON' : 'Hover-Only Edge Labels (Clean mode): ON'}
+        >
+          <Tag className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 };

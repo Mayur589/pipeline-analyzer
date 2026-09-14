@@ -283,19 +283,19 @@ function drawNodeLabel(
   const text = node.label;
   if (!text) return;
 
-  const fontSz = Math.max(fontSize, 13.5);
-  ctx.font = `${isHighlighted ? '600' : '500'} ${fontSz}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const fontSz = Math.min(12, Math.max(10.5, fontSize || 11.5));
+  ctx.font = `${isHighlighted ? '600' : '500'} ${fontSz}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  const labelY = y + r + 4;
-  const paddingX = 6;
-  const paddingY = 2;
+  const labelY = y + r + 3.5;
+  const paddingX = 5;
+  const paddingY = 1.5;
   const metrics = ctx.measureText(text);
   const textWidth = metrics.width;
 
-  // Background pill for label (Obsidian graph style)
-  ctx.fillStyle = isHighlighted ? 'rgba(15, 23, 42, 0.96)' : 'rgba(9, 13, 22, 0.82)';
+  // Background pill for label (Obsidian graph style - clean & compact)
+  ctx.fillStyle = isHighlighted ? 'rgba(15, 23, 42, 0.96)' : 'rgba(9, 13, 22, 0.88)';
   ctx.beginPath();
   ctx.roundRect(
     x - textWidth / 2 - paddingX,
@@ -306,12 +306,12 @@ function drawNodeLabel(
   );
   ctx.fill();
 
-  ctx.strokeStyle = isHighlighted ? '#38bdf8' : 'rgba(255, 255, 255, 0.10)';
-  ctx.lineWidth = isHighlighted ? 1.5 : 0.8;
+  ctx.strokeStyle = isHighlighted ? '#38bdf8' : 'rgba(255, 255, 255, 0.12)';
+  ctx.lineWidth = isHighlighted ? 1.5 : 0.7;
   ctx.stroke();
 
   // Label text - clean, crisp and prominent
-  ctx.fillStyle = isHighlighted ? '#ffffff' : '#f1f5f9';
+  ctx.fillStyle = isHighlighted ? '#ffffff' : '#e2e8f0';
   ctx.fillText(text, x, labelY);
 }
 

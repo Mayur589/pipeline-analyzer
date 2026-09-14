@@ -96,18 +96,36 @@ export function formatRelationshipLabel(id: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export const RELATIONSHIP_PALETTE: Record<string, string> = {
+  triggers: '#38bdf8',         // Sky cyan
+  provides_source: '#34d399',  // Mint green
+  authenticates: '#fbbf24',    // Warm amber
+  executes: '#a78bfa',         // Indigo / purple
+  consumed_by: '#60a5fa',      // Royal blue
+  produces: '#2dd4bf',         // Vibrant teal
+  provides: '#0ea5e9',         // Deep sky blue
+  monitored_by: '#fb7185',     // Rose / coral
+  alerts: '#f97316',           // Bright orange
+  contributes_to: '#a3e635'    // Lime green
+};
+
+export const UNIFIED_CONNECTION_COLOR = '#64748b';
+
 /**
- * Generate a consistent, vibrant HSL color for any string ID dynamically.
- * Zero hardcoded color tables or dictionaries.
+ * Generate a consistent, vibrant color for each distinct relationship type.
+ * Used for relationship badges, inspector panels, relationship selector, and relationship pills.
  */
-export function getRelationshipColor(id: string): string {
-  if (!id) return '#06b6d4';
+export function getRelationshipColor(id?: string): string {
+  if (!id) return '#38bdf8';
+  const cleanId = id.toLowerCase().replace(/ /g, '_');
+  if (RELATIONSHIP_PALETTE[cleanId]) return RELATIONSHIP_PALETTE[cleanId];
+  if (RELATIONSHIP_PALETTE[id]) return RELATIONSHIP_PALETTE[id];
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = id.charCodeAt(i) + ((hash << 5) - hash);
   }
   const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 70%, 55%)`;
+  return `hsl(${hue}, 75%, 60%)`;
 }
 
 export function getRelationshipGroupInfo(relationshipId: string) {
@@ -174,6 +192,7 @@ export interface GraphEdge {
   weight?: number;
   type?: 'default' | 'directional' | 'dashed' | 'strong';
   color?: string;
+  relationshipColor?: string;
 }
 
 export interface GraphData {
@@ -189,12 +208,15 @@ export interface PhysicsConfig {
   collisionRadius: number;
   damping: number;
   enabled: boolean;
+  unconnectedRepulsion?: number;
+  unconnectedGravity?: number;
 }
 
 export type ColorByOption = 'type' | 'tag' | 'degree' | 'custom';
 
 export interface DisplayConfig {
   showLabels: boolean;
+  showEdgeLabels?: boolean;
   labelSize: number;
   linkThickness: number;
   curvedEdges: boolean;

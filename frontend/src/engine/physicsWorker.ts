@@ -3,7 +3,9 @@ import {
   forceManyBody,
   forceLink,
   forceCenter,
-  forceCollide
+  forceCollide,
+  forceX,
+  forceY
 } from 'd3-force';
 import type {
   Simulation,
@@ -43,15 +45,33 @@ let simulation: Simulation<WorkerNode, WorkerLink> | null = null;
 let nodesMap = new Map<string, WorkerNode>();
 let currentNodes: WorkerNode[] = [];
 let currentEdges: WorkerLink[] = [];
+let degreeMap = new Map<string, number>();
+
 let currentConfig: PhysicsConfig = {
-  repulsion: -600,
+  repulsion: -420,
   linkDistance: 190,
-  linkStrength: 0.35,
-  gravity: 0.02,
-  collisionRadius: 36,
-  damping: 0.42,
-  enabled: true
+  linkStrength: 0.65,
+  gravity: 0.035,
+  collisionRadius: 55,
+  damping: 0.38,
+  enabled: true,
+  unconnectedRepulsion: -280,
+  unconnectedGravity: 0.04
 };
+
+function getDegree(nodeId: string): number {
+  return degreeMap.get(nodeId) || 0;
+}
+
+function updateDegreeMap() {
+  degreeMap.clear();
+  currentEdges.forEach((e) => {
+    const srcId = typeof e.source === 'object' ? (e.source as WorkerNode).id : e.source;
+    const tgtId = typeof e.target === 'object' ? (e.target as WorkerNode).id : e.target;
+    degreeMap.set(srcId, (degreeMap.get(srcId) || 0) + 1);
+    degreeMap.set(tgtId, (degreeMap.get(tgtId) || 0) + 1);
+  });
+}
 
 self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
   const { type, nodes, edges, config, nodeId, x, y } = event.data;
@@ -61,7 +81,7 @@ self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
 
     currentConfig = config;
     const count = nodes.length;
-    const baseRadius = Math.max(220, Math.sqrt(count) * 110);
+    const baseRadius = Math.max(160, Math.sqrt(count) * 85);
     const goldenAngle = 2.3999632; // ~137.5 degrees
 
     currentNodes = nodes.map((n, i) => {
@@ -88,10 +108,11 @@ self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
 
     currentEdges = edges.map(e => ({
       id: e.id,
-      source: typeof e.source === 'object' ? e.source.id : e.source,
-      target: typeof e.target === 'object' ? e.target.id : e.target
+      source: typeof e.source === 'object' ? (e.source as WorkerNode).id : e.source,
+      target: typeof e.target === 'object' ? (e.target as WorkerNode).id : e.target
     }));
 
+    updateDegreeMap();
     initSimulation();
   } else if (type === 'updateConfig') {
     if (config) {
@@ -114,11 +135,14 @@ self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
         node.fx = null;
         node.fy = null;
         simulation.alphaTarget(0);
+        simulation.alpha(0.15).restart();
       }
     }
   } else if (type === 'reheat') {
     if (simulation) {
-      simulation.alpha(0.8).restart();
+      updateDegreeMap();
+      updateSimulationForces();
+      simulation.alpha(0.6).restart();
     }
   }
 };
@@ -136,25 +160,50 @@ function initSimulation() {
     .strength(currentConfig.linkStrength);
 
   const chargeForce = forceManyBody<WorkerNode>()
-    .strength(currentConfig.repulsion)
-    .distanceMax(2000);
+    .strength(d => {
+      const deg = getDegree(d.id);
+      // Soft repulsion for unconnected nodes so they never get blasted into deep space
+      if (deg === 0) {
+        return currentConfig.unconnectedRepulsion ?? Math.max(-280, currentConfig.repulsion * 0.65);
+      }
+      return currentConfig.repulsion;
+    })
+    .distanceMin(40)
+    .distanceMax(700);
+
+  // Directional centripetal gravity forces to keep unconnected nodes neatly in graph orbit
+  const xForce = forceX<WorkerNode>(0).strength(d => {
+    const deg = getDegree(d.id);
+    return deg === 0
+      ? (currentConfig.unconnectedGravity ?? currentConfig.gravity)
+      : currentConfig.gravity;
+  });
+
+  const yForce = forceY<WorkerNode>(0).strength(d => {
+    const deg = getDegree(d.id);
+    return deg === 0
+      ? (currentConfig.unconnectedGravity ?? currentConfig.gravity)
+      : currentConfig.gravity;
+  });
 
   const centerForce = forceCenter<WorkerNode>(0, 0)
     .strength(currentConfig.gravity);
 
   const collideForce = forceCollide<WorkerNode>()
     .radius(d => (d.size || 8) + currentConfig.collisionRadius)
-    .iterations(3);
+    .iterations(4);
 
   simulation = forceSimulation<WorkerNode, WorkerLink>(currentNodes)
     .velocityDecay(currentConfig.damping)
     .force('charge', chargeForce)
     .force('link', linkForce)
+    .force('x', xForce)
+    .force('y', yForce)
     .force('center', centerForce)
     .force('collide', collideForce);
 
-  // Run 100 fast warmup ticks synchronously to untangle and relax the graph layout
-  for (let i = 0; i < 100; i++) {
+  // Run fast warmup ticks synchronously to untangle and relax the graph layout
+  for (let i = 0; i < 150; i++) {
     simulation.tick();
   }
 
@@ -180,7 +229,7 @@ function initSimulation() {
     self.postMessage({ type: 'tick', positions });
   });
 
-  simulation.alpha(0.3).restart();
+  simulation.alpha(0.25).restart();
 }
 
 function updateSimulationForces() {
@@ -190,12 +239,42 @@ function updateSimulationForces() {
   }
 
   const charge = simulation.force('charge') as ReturnType<typeof forceManyBody>;
-  if (charge) charge.strength(currentConfig.repulsion);
+  if (charge) {
+    charge.strength((d: any) => {
+      const deg = getDegree(d.id);
+      if (deg === 0) {
+        return currentConfig.unconnectedRepulsion ?? Math.max(-280, currentConfig.repulsion * 0.65);
+      }
+      return currentConfig.repulsion;
+    });
+    charge.distanceMin(40);
+    charge.distanceMax(700);
+  }
 
   const link = simulation.force('link') as ReturnType<typeof forceLink>;
   if (link) {
     link.distance(currentConfig.linkDistance);
     link.strength(currentConfig.linkStrength);
+  }
+
+  const xForce = simulation.force('x') as ReturnType<typeof forceX>;
+  if (xForce) {
+    xForce.strength((d: any) => {
+      const deg = getDegree(d.id);
+      return deg === 0
+        ? (currentConfig.unconnectedGravity ?? Math.max(0.08, currentConfig.gravity * 2.2))
+        : currentConfig.gravity;
+    });
+  }
+
+  const yForce = simulation.force('y') as ReturnType<typeof forceY>;
+  if (yForce) {
+    yForce.strength((d: any) => {
+      const deg = getDegree(d.id);
+      return deg === 0
+        ? (currentConfig.unconnectedGravity ?? Math.max(0.08, currentConfig.gravity * 2.2))
+        : currentConfig.gravity;
+    });
   }
 
   const center = simulation.force('center') as ReturnType<typeof forceCenter>;
@@ -206,8 +285,9 @@ function updateSimulationForces() {
 
   simulation.velocityDecay(currentConfig.damping);
   if (currentConfig.enabled) {
-    simulation.alpha(0.3).restart();
+    simulation.alpha(0.25).restart();
   } else {
     simulation.stop();
   }
 }
+
