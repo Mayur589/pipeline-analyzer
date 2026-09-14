@@ -3,12 +3,18 @@ import { useGraphStore } from '../store/graphStore';
 import { Layers } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { nodeCategories, nodes } = useGraphStore();
+  const { nodeCategories, nodes, appMode } = useGraphStore();
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, categoryId: string) => {
+    if (appMode === 'attack') {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.setData('application/pipelineguard-node', categoryId);
     e.dataTransfer.effectAllowed = 'move';
   };
+
+  const isEdit = appMode === 'edit';
 
   return (
     <aside className="w-[220px] shrink-0 bg-[#0B1220]/70 backdrop-blur-md border-r border-white/5 flex flex-col select-none z-20">
@@ -18,7 +24,9 @@ export const Sidebar: React.FC = () => {
           <Layers className="w-3.5 h-3.5 text-cyan-400" />
           <span className="text-xs font-semibold text-slate-200 tracking-tight">Color : Category</span>
         </div>
-        <span className="text-[10px] text-slate-500 font-mono">Drag to add</span>
+        <span className={`text-[10px] font-mono ${isEdit ? 'text-slate-500' : 'text-rose-400 font-medium'}`}>
+          {isEdit ? 'Drag to add' : 'Attack Mode'}
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
@@ -27,10 +35,18 @@ export const Sidebar: React.FC = () => {
           return (
             <div
               key={cat.id}
-              draggable
+              draggable={isEdit}
               onDragStart={(e) => handleDragStart(e, cat.id)}
-              className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-grab active:cursor-grabbing transition-colors duration-150"
-              title={`Drag to canvas to add ${cat.category} node`}
+              className={`group flex items-center justify-between px-2 py-1.5 rounded-lg transition-colors duration-150 ${
+                isEdit
+                  ? 'hover:bg-white/5 cursor-grab active:cursor-grabbing'
+                  : 'opacity-75 cursor-not-allowed'
+              }`}
+              title={
+                isEdit
+                  ? `Drag to canvas to add ${cat.category} node`
+                  : `Editing disabled in Attack Mode`
+              }
             >
               <div className="flex items-center gap-2 min-w-0">
                 {/* Unique Color Dot with subtle glow */}
@@ -48,7 +64,7 @@ export const Sidebar: React.FC = () => {
                 </span>
               </div>
 
-              {/* Count only, no color hex code */}
+              {/* Count only */}
               {count > 0 && (
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">
                   {count}

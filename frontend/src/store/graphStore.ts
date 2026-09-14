@@ -30,11 +30,15 @@ interface GraphStoreState {
   nodeCategories: NodeCategory[];
   allRelationships: string[];
 
+  // Mode state
+  appMode: 'edit' | 'attack';
+
   // UI state
   isLoading: boolean;
   error: string | null;
 
   // Actions
+  setAppMode: (mode: 'edit' | 'attack') => void;
   initialize: () => Promise<void>;
   loadProjects: () => Promise<Project[]>;
   selectProject: (projectId: string) => Promise<void>;
@@ -72,8 +76,17 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   connectSourceId: null,
   nodeCategories: [],
   allRelationships: [],
+  appMode: 'edit',
   isLoading: false,
   error: null,
+
+  setAppMode: (mode) => {
+    if (mode === 'attack') {
+      set({ appMode: mode, connectSourceId: null });
+    } else {
+      set({ appMode: mode });
+    }
+  },
 
   initialize: async () => {
     set({ isLoading: true, error: null });

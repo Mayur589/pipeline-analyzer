@@ -31,6 +31,7 @@ export class GraphEngine {
   private filterConfig!: FilterConfig;
   private searchResults = new Set<string>();
 
+  private appMode: 'edit' | 'attack' = 'edit';
   private camera: Camera = { x: 0, y: 0, zoom: 1 };
   private selectedNodeId: string | null = null;
   private selectedEdgeId: string | null = null;
@@ -46,6 +47,13 @@ export class GraphEngine {
   private panStart = { x: 0, y: 0 };
   private particleOffset = 0;
 
+  public setAppMode(mode: 'edit' | 'attack') {
+    this.appMode = mode;
+    if (mode === 'attack') {
+      this.setConnectingSource(null);
+    }
+  }
+
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
   private onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
@@ -53,6 +61,7 @@ export class GraphEngine {
   private onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
+  private onConnectStart?: (sourceId: string | null) => void;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -63,6 +72,7 @@ export class GraphEngine {
       onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
+      onConnectStart?: (sourceId: string | null) => void;
     }
   ) {
     this.canvas = canvas;
@@ -73,6 +83,7 @@ export class GraphEngine {
     this.onCandidateHover = options.onCandidateHover;
     this.onConnectNodes = options.onConnectNodes;
     this.onConnectCancel = options.onConnectCancel;
+    this.onConnectStart = options.onConnectStart;
 
     this.setupEvents();
     this.centerCamera();
@@ -91,6 +102,7 @@ export class GraphEngine {
   }
 
   public setConnectingSource(nodeId: string | null) {
+    const isSame = this.connectingSourceId === nodeId;
     if (this.connectingCandidateId && this.onCandidateHover && this.connectingSourceId) {
       this.onCandidateHover(this.connectingSourceId, null);
     }
@@ -99,6 +111,9 @@ export class GraphEngine {
     this.candidateValidation = null;
     if (this.canvas) {
       this.canvas.style.cursor = nodeId ? 'crosshair' : 'grab';
+    }
+    if (!isSame && this.onConnectStart) {
+      this.onConnectStart(nodeId);
     }
     if (nodeId) {
       const target = this.findCandidateTargetNode(this.mouseWorldPos.x, this.mouseWorldPos.y, nodeId);
@@ -470,11 +485,15 @@ export class GraphEngine {
     const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
 
     // -------------------------------------------------------------
-    // RIGHT-CLICK: Enter Connection Phase (Rubberband line + green/red lights)
+    // RIGHT-CLICK: Enter Connection Phase (Rubberband line + green/red lights) in Edit Mode
     // -------------------------------------------------------------
     if (isRightClick) {
       if (hitNode) {
-        this.setConnectingSource(hitNode.id);
+        if (this.appMode === 'edit') {
+          this.setConnectingSource(hitNode.id);
+        } else {
+          this.setConnectingSource(null);
+        }
         if (this.onSelectNode) {
           this.onSelectNode(hitNode.id, e);
         }

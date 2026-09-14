@@ -31,7 +31,8 @@ import {
   Palette,
   AlertTriangle,
   Check,
-  CheckCircle2
+  CheckCircle2,
+  ShieldAlert
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
@@ -90,7 +91,8 @@ export const Prj1GraphCanvas: React.FC = () => {
     addNode,
     removeNode,
     addEdge,
-    nodeCategories
+    nodeCategories,
+    appMode
   } = useGraphStore();
 
   // Convert PipelineGuard entities to GraphNode and GraphEdge with degree-based sizing
@@ -405,6 +407,9 @@ export const Prj1GraphCanvas: React.FC = () => {
       },
       onConnectCancel: () => {
         callbacksRef.current.setConnectSourceId(null);
+      },
+      onConnectStart: (sourceId) => {
+        callbacksRef.current.setConnectSourceId(sourceId);
       }
     });
 
@@ -462,6 +467,13 @@ export const Prj1GraphCanvas: React.FC = () => {
     }
   }, [connectSourceId]);
 
+  // Synchronize App Mode to Engine
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.setAppMode(appMode);
+    }
+  }, [appMode]);
+
   // Synchronize Display and Search Configs
   useEffect(() => {
     if (!engineRef.current) return;
@@ -481,13 +493,15 @@ export const Prj1GraphCanvas: React.FC = () => {
 
   // Drag & Drop from left minimal sidebar
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (appMode === 'attack') return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-  }, []);
+  }, [appMode]);
 
   const handleDrop = useCallback(
     async (e: React.DragEvent) => {
       e.preventDefault();
+      if (appMode === 'attack') return;
       const categoryId = e.dataTransfer.getData('application/pipelineguard-node');
       if (!categoryId) return;
 
@@ -515,7 +529,7 @@ export const Prj1GraphCanvas: React.FC = () => {
         workerRef.current.postMessage({ type: 'reheat' });
       }
     },
-    [nodeCategories, addNode, selectNode]
+    [nodeCategories, addNode, selectNode, appMode]
   );
 
   const handleReheat = () => {
@@ -536,8 +550,16 @@ export const Prj1GraphCanvas: React.FC = () => {
         className="w-full h-full block cursor-grab active:cursor-grabbing"
       />
 
+      {/* Attack mode subtle badge */}
+      {appMode === 'attack' && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#12080F]/90 border border-rose-500/30 backdrop-blur-md text-rose-300 text-[11px] shadow-lg pointer-events-none">
+          <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+          <span className="font-medium tracking-tight">Attack Mode Active</span>
+        </div>
+      )}
+
       {/* Connect mode banner */}
-      {connectSourceId && (() => {
+      {appMode === 'edit' && connectSourceId && (() => {
         const srcNode = nodes.find((n) => n.id === connectSourceId);
         const srcName = srcNode ? getProperty(srcNode.properties, 'name') || srcNode.id : 'Node';
         return (

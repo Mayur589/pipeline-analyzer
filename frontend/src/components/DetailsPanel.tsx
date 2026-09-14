@@ -9,7 +9,7 @@ import {
   formatRelationshipLabel
 } from '../types/graph';
 import { validateRelationship } from '../api/client';
-import { ArrowRight, X, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { ArrowRight, X, ArrowLeftRight, Loader2, ShieldAlert } from 'lucide-react';
 
 interface NodeInspectorProps {
   node: Node;
@@ -33,7 +33,8 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
     removeEdge,
     selectNode,
     selectEdge,
-    nodeCategories
+    nodeCategories,
+    appMode
   } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<NodeProperties>(() =>
@@ -118,9 +119,17 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
 
   const color = category?.color || '#06b6d4';
   const nodeName = localProps.name || node.id;
+  const isEdit = appMode === 'edit';
 
   return (
     <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
+      {!isEdit && (
+        <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 text-xs text-rose-300 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Attack Mode (Read Only)</span>
+        </div>
+      )}
+
       {/* Header with category indicator */}
       <div className="p-5 border-b border-white/5">
         <div className="flex items-center justify-between">
@@ -135,14 +144,16 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-                }`}
-              />
-              {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
-            </span>
+            {isEdit && (
+              <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                  }`}
+                />
+                {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+              </span>
+            )}
 
             <button
               onClick={onClose}
@@ -162,7 +173,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
       {/* Properties List */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
         <div className="text-xs font-medium text-slate-400 uppercase tracking-wider pb-1 border-b border-white/5">
-          Properties
+          Properties {!isEdit && '(Locked)'}
         </div>
 
         {(category?.fieldDefs?.map((f) => f.key) || category?.defaultProperties || []).map((propKey) => {
@@ -189,13 +200,16 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             return (
               <label
                 key={propKey}
-                className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-white/[0.02] border border-white/5 cursor-pointer transition-colors"
+                className={`flex items-start gap-3 p-2.5 rounded-lg border border-white/5 transition-colors ${
+                  isEdit ? 'hover:bg-white/[0.02] cursor-pointer' : 'opacity-70 cursor-not-allowed'
+                }`}
               >
                 <input
                   type="checkbox"
                   checked={isChecked}
-                  onChange={(e) => handlePropertyChange(propKey, e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-cyan-500 bg-slate-900 border-white/20 focus:ring-0 accent-cyan-500 transition-all cursor-pointer"
+                  disabled={!isEdit}
+                  onChange={(e) => isEdit && handlePropertyChange(propKey, e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-cyan-500 bg-slate-900 border-white/20 focus:ring-0 accent-cyan-500 transition-all cursor-pointer disabled:cursor-not-allowed"
                 />
                 <div className="text-xs">
                   <span className="font-medium text-slate-200 block">{label}</span>
@@ -215,8 +229,9 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                 <label className="block text-xs font-medium text-slate-300">{label}</label>
                 <select
                   value={String(currentValue ?? '')}
-                  onChange={(e) => handlePropertyChange(propKey, e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all cursor-pointer"
+                  disabled={!isEdit}
+                  onChange={(e) => isEdit && handlePropertyChange(propKey, e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {fieldDef.options.map((opt) => (
                     <option key={opt} value={opt} className="bg-[#0B1220] text-slate-200">
@@ -234,9 +249,10 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               <input
                 type="text"
                 value={String(currentValue ?? '')}
-                onChange={(e) => handlePropertyChange(propKey, e.target.value)}
+                disabled={!isEdit}
+                onChange={(e) => isEdit && handlePropertyChange(propKey, e.target.value)}
                 placeholder={fieldDef?.placeholder || `Enter ${label.toLowerCase()}...`}
-                className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all"
+                className="w-full px-3 py-2 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
               />
             </div>
           );
@@ -248,46 +264,48 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             Connected Nodes ({nodeEdges.length})
           </div>
 
-          {/* Connect to Node selector */}
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <select
-                value={selectedTargetId}
-                onChange={(e) => {
-                  setSelectedTargetId(e.target.value);
-                  setConnectError(null);
-                }}
-                className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all truncate cursor-pointer"
-              >
-                <option value="" className="bg-[#0B1220] text-slate-400">
-                  Connect to node...
-                </option>
-                {otherNodes.map((n) => {
-                  const name = getProperty(n.properties, 'name') || n.id;
-                  const cat = nodeCategories.find((c) => c.id === n.categoryId)?.category || n.categoryId;
-                  return (
-                    <option key={n.id} value={n.id} className="bg-[#0B1220] text-slate-200">
-                      {name} ({cat})
-                    </option>
-                  );
-                })}
-              </select>
+          {/* Connect to Node selector (Edit Mode only) */}
+          {isEdit && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <select
+                  value={selectedTargetId}
+                  onChange={(e) => {
+                    setSelectedTargetId(e.target.value);
+                    setConnectError(null);
+                  }}
+                  className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-white/10 rounded-lg text-slate-200 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/20 transition-all truncate cursor-pointer"
+                >
+                  <option value="" className="bg-[#0B1220] text-slate-400">
+                    Connect to node...
+                  </option>
+                  {otherNodes.map((n) => {
+                    const name = getProperty(n.properties, 'name') || n.id;
+                    const cat = nodeCategories.find((c) => c.id === n.categoryId)?.category || n.categoryId;
+                    return (
+                      <option key={n.id} value={n.id} className="bg-[#0B1220] text-slate-200">
+                        {name} ({cat})
+                      </option>
+                    );
+                  })}
+                </select>
 
-              <button
-                onClick={handleAddConnection}
-                disabled={!selectedTargetId || isConnecting}
-                className="px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center gap-1"
-              >
-                {isConnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}
-              </button>
+                <button
+                  onClick={handleAddConnection}
+                  disabled={!selectedTargetId || isConnecting}
+                  className="px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all disabled:opacity-40 disabled:pointer-events-none cursor-pointer flex items-center gap-1"
+                >
+                  {isConnecting ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Connect'}
+                </button>
+              </div>
+
+              {connectError && (
+                <p className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2 rounded-lg leading-tight">
+                  {connectError}
+                </p>
+              )}
             </div>
-
-            {connectError && (
-              <p className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2 rounded-lg leading-tight">
-                {connectError}
-              </p>
-            )}
-          </div>
+          )}
 
           {/* Connected edges list */}
           <div className="space-y-1.5">
@@ -324,13 +342,15 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                         </span>
                         <span className="text-slate-300 truncate font-medium">{otherName}</span>
                       </button>
-                      <button
-                        onClick={() => removeEdge(e.id)}
-                        title="Disconnect"
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all cursor-pointer"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+                      {isEdit && (
+                        <button
+                          onClick={() => removeEdge(e.id)}
+                          title="Disconnect"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-rose-400 transition-all cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
 
                     {/* Semantic relationship badge & inspector trigger */}
@@ -364,10 +384,15 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
       {/* Footer */}
       <div className="p-5 border-t border-white/5">
         <button
-          onClick={() => onDelete(node.id)}
-          className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center cursor-pointer"
+          onClick={() => isEdit && onDelete(node.id)}
+          disabled={!isEdit}
+          className={`w-full py-2 text-xs font-medium rounded-lg transition-colors text-center ${
+            isEdit
+              ? 'text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer'
+              : 'text-slate-600 bg-white/[0.01] cursor-not-allowed opacity-50'
+          }`}
         >
-          Delete Node
+          {isEdit ? 'Delete Node' : 'Delete Disabled in Attack Mode'}
         </button>
       </div>
     </aside>
@@ -393,6 +418,8 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   onUpdateRelationship,
   onReverse
 }) => {
+  const { appMode } = useGraphStore();
+  const isEdit = appMode === 'edit';
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
   const [allowedRels, setAllowedRels] = useState<string[]>([]);
   const [reverseAllowed, setReverseAllowed] = useState(false);
@@ -436,6 +463,7 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   const groupInfo = getRelationshipGroupInfo(edge.relationshipId);
 
   const handleRelationshipSelect = async (newRelId: string) => {
+    if (!isEdit) return;
     setSaveStatus('saving');
     try {
       await onUpdateRelationship(edge.id, newRelId);
@@ -448,18 +476,27 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
 
   return (
     <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none">
+      {!isEdit && (
+        <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 text-xs text-rose-300 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>Attack Mode (Read Only)</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="p-5 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-slate-200">Relationship</h3>
-          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
-              }`}
-            />
-            {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
-          </span>
+          {isEdit && (
+            <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  saveStatus === 'saving' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                }`}
+              />
+              {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+            </span>
+          )}
         </div>
 
         <button
@@ -506,8 +543,9 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
 
           <select
             value={edge.relationshipId}
-            onChange={(e) => handleRelationshipSelect(e.target.value)}
-            className="w-full px-3 py-2 text-xs bg-[#0F172A] border border-white/10 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-all font-sans cursor-pointer"
+            disabled={!isEdit}
+            onChange={(e) => isEdit && handleRelationshipSelect(e.target.value)}
+            className="w-full px-3 py-2 text-xs bg-[#0F172A] border border-white/10 rounded-lg text-slate-100 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-all font-sans cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {allowedRels.length > 0 ? (
               allowedRels.map((relId) => {
@@ -525,7 +563,9 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
             )}
           </select>
           <p className="text-[10px] text-slate-500">
-            Dropdown contains valid relationships validated by backend for {sourceCat} → {targetCat}.
+            {isEdit
+              ? `Dropdown contains valid relationships validated by backend for ${sourceCat} → ${targetCat}.`
+              : 'Editing disabled in Attack Mode.'}
           </p>
         </div>
 
@@ -563,15 +603,17 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
         {onReverse && (
           <div>
             <button
-              onClick={() => onReverse(edge.id)}
-              disabled={!reverseAllowed}
+              onClick={() => isEdit && onReverse(edge.id)}
+              disabled={!reverseAllowed || !isEdit}
               title={
-                reverseAllowed
+                !isEdit
+                  ? 'Reverse disabled in Attack Mode'
+                  : reverseAllowed
                   ? 'Reverse connection direction'
                   : 'Reversed connection is not permitted by backend validation'
               }
               className={`w-full py-2 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-                reverseAllowed
+                reverseAllowed && isEdit
                   ? 'text-slate-300 hover:text-white bg-white/[0.03] hover:bg-white/10 border border-white/10 cursor-pointer'
                   : 'text-slate-600 bg-white/[0.01] border border-white/5 cursor-not-allowed opacity-60'
               }`}
@@ -579,7 +621,7 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
               <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
               <span>{reverseAllowed ? 'Reverse Direction' : 'Reverse Disallowed'}</span>
             </button>
-            {!reverseAllowed && (
+            {!reverseAllowed && isEdit && (
               <span className="block text-[10px] text-slate-500 text-center mt-1">
                 Reverse direction not permitted for this category pair
               </span>
@@ -587,10 +629,15 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
           </div>
         )}
         <button
-          onClick={() => onDelete(edge.id)}
-          className="w-full py-2 text-xs font-medium text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors text-center cursor-pointer"
+          onClick={() => isEdit && onDelete(edge.id)}
+          disabled={!isEdit}
+          className={`w-full py-2 text-xs font-medium rounded-lg transition-colors text-center ${
+            isEdit
+              ? 'text-rose-400/80 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer'
+              : 'text-slate-600 bg-white/[0.01] cursor-not-allowed opacity-50'
+          }`}
         >
-          Delete Relationship
+          {isEdit ? 'Delete Relationship' : 'Delete Disabled in Attack Mode'}
         </button>
       </div>
     </aside>

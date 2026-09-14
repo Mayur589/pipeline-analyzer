@@ -11,7 +11,9 @@ import {
   Radio,
   Loader2,
   Pencil,
-  X
+  X,
+  Edit3,
+  ShieldAlert
 } from 'lucide-react';
 
 import { createDefaultProperties } from '../types/graph';
@@ -33,7 +35,9 @@ export const Header: React.FC = () => {
     updateProject,
     deleteProject,
     isLoading,
-    nodeCategories
+    nodeCategories,
+    appMode,
+    setAppMode
   } = useGraphStore();
 
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
@@ -451,6 +455,35 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
+      {/* Center: Mode Toggle (Edit Mode vs Attack Mode) */}
+      <div className="flex items-center p-0.5 rounded-xl bg-[#060A12]/80 border border-white/10 text-xs font-medium shadow-inner">
+        <button
+          onClick={() => setAppMode('edit')}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
+            appMode === 'edit'
+              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Edit Mode: Graph editing, node dragging, linking & property editing enabled"
+        >
+          <Edit3 className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Edit Mode</span>
+        </button>
+
+        <button
+          onClick={() => setAppMode('attack')}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
+            appMode === 'attack'
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm font-semibold'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Attack Mode: Simulation view (Graph editing partitioned/disabled)"
+        >
+          <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+          <span>Attack Mode</span>
+        </button>
+      </div>
+
       {/* Right: Actions */}
       <div className="flex items-center gap-2">
         {isLoading && (
@@ -462,9 +495,9 @@ export const Header: React.FC = () => {
 
         <button
           onClick={handleLoadSamplePipeline}
-          disabled={isPopulatingSample || !projectId}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all cursor-pointer disabled:opacity-50"
-          title="Populate complete supply chain sample into backend"
+          disabled={isPopulatingSample || !projectId || appMode === 'attack'}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+          title={appMode === 'attack' ? 'Load Sample disabled in Attack Mode' : 'Populate complete supply chain sample into backend'}
         >
           {isPopulatingSample ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -476,9 +509,9 @@ export const Header: React.FC = () => {
 
         <button
           onClick={handleClearProject}
-          disabled={nodes.length === 0}
+          disabled={nodes.length === 0 || appMode === 'attack'}
           className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
-          title="Clear all nodes in current project"
+          title={appMode === 'attack' ? 'Clear disabled in Attack Mode' : 'Clear all nodes in current project'}
         >
           <Trash2 className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Clear</span>
