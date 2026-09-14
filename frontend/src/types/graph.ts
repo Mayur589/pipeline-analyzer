@@ -252,3 +252,44 @@ export function createDefaultProperties(category: NodeCategory): NodeProperties 
 
   return props;
 }
+
+// -------------------------------------------------------------
+// Attack Simulation Types
+// -------------------------------------------------------------
+
+export type StepOutcome = 'COMPROMISED' | 'SLOWED' | 'BLOCKED' | 'DETECTED';
+export type SeverityLabel = 'Critical' | 'High' | 'Medium' | 'Low';
+
+export interface SeverityScore {
+  score: number;
+  label: SeverityLabel;
+}
+
+export interface AttackStep {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  relationship: string;
+  outcome: StepOutcome;
+  reason: string;
+  controlsTriggered: string[];
+}
+
+export interface AttackSimulationResult {
+  attackId: string;
+  projectId: string;
+  startNodeId: string;
+  scenario: string;
+  steps: AttackStep[];
+  compromisedNodeIds: string[];
+  blockedNodeIds: string[];
+  detectedAtStep: number | null;
+  overallSeverity: SeverityScore;
+}
+
+export const OUTCOME_COLORS: Record<StepOutcome, string> = {
+  COMPROMISED: '#ef4444',
+  SLOWED: '#f59e0b',
+  BLOCKED: '#10b981',
+  DETECTED: '#06b6d4'
+};

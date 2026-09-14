@@ -12,7 +12,8 @@ import {
   deleteNode,
   createEdge,
   editEdge,
-  deleteEdge
+  deleteEdge,
+  simulateAttack
 } from './client.ts';
 
 async function runLiveBackendTests() {
@@ -138,8 +139,20 @@ async function runLiveBackendTests() {
     throw new Error('Graph state does not match expected node/edge count');
   }
 
-  // 12. DELETE /projects/{project_id}/edges/{edge_id}
-  console.log(`12. Testing DELETE /projects/${testProject.id}/edges/${edge.id}`);
+  // 12. POST /projects/{project_id}/attack
+  console.log(`12. Testing POST /projects/${testProject.id}/attack`);
+  const attackResult = await simulateAttack(
+    testProject.id,
+    node1.id,
+    'compromised_maintainer_credentials'
+  );
+  console.log(`   ✓ Attack simulated: id=${attackResult.attackId}, severity=${attackResult.overallSeverity.label} (${attackResult.overallSeverity.score}), steps=${attackResult.steps.length}`);
+  if (!attackResult.attackId || attackResult.projectId !== testProject.id || attackResult.startNodeId !== node1.id) {
+    throw new Error('Attack simulation returned invalid data structure');
+  }
+
+  // 13. DELETE /projects/{project_id}/edges/{edge_id}
+  console.log(`13. Testing DELETE /projects/${testProject.id}/edges/${edge.id}`);
   await deleteEdge(testProject.id, edge.id);
   console.log(`   ✓ Edge ${edge.id} deleted.`);
 
@@ -165,7 +178,7 @@ async function runLiveBackendTests() {
   }
   console.log(`   ✓ Project ${testProject.id} successfully deleted from backend.`);
 
-  console.log('\n🌟 ALL 13 REST API ENDPOINTS TESTED AND VERIFIED SUCCESSFULLY AGAINST 127.0.0.1:3000!\n');
+  console.log('\n🌟 ALL 14 REST API ENDPOINTS (INCLUDING ATTACK SIMULATION) TESTED AND VERIFIED AGAINST 127.0.0.1:3000!\n');
 }
 
 runLiveBackendTests().catch((err) => {

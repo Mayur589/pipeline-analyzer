@@ -44,12 +44,12 @@ let nodesMap = new Map<string, WorkerNode>();
 let currentNodes: WorkerNode[] = [];
 let currentEdges: WorkerLink[] = [];
 let currentConfig: PhysicsConfig = {
-  repulsion: -380,
-  linkDistance: 170,
-  linkStrength: 0.7,
-  gravity: 0.10,
-  collisionRadius: 28,
-  damping: 0.45,
+  repulsion: -600,
+  linkDistance: 190,
+  linkStrength: 0.35,
+  gravity: 0.02,
+  collisionRadius: 36,
+  damping: 0.42,
   enabled: true
 };
 
@@ -60,13 +60,22 @@ self.onmessage = (event: MessageEvent<WorkerInitMessage>) => {
     if (!nodes || !edges || !config) return;
 
     currentConfig = config;
-    currentNodes = nodes.map(n => {
+    const count = nodes.length;
+    const baseRadius = Math.max(220, Math.sqrt(count) * 110);
+    const goldenAngle = 2.3999632; // ~137.5 degrees
+
+    currentNodes = nodes.map((n, i) => {
       const existing = nodesMap.get(n.id);
+      const angle = i * goldenAngle;
+      const r = count > 1 ? Math.sqrt((i + 1) / count) * baseRadius : 0;
+      const initialX = Math.cos(angle) * r;
+      const initialY = Math.sin(angle) * r;
+
       return {
         id: n.id,
-        size: n.size || 20,
-        x: existing?.x ?? n.x ?? (Math.random() - 0.5) * 200,
-        y: existing?.y ?? n.y ?? (Math.random() - 0.5) * 200,
+        size: n.size || 8,
+        x: existing?.x ?? n.x ?? initialX,
+        y: existing?.y ?? n.y ?? initialY,
         vx: existing?.vx ?? n.vx ?? 0,
         vy: existing?.vy ?? n.vy ?? 0,
         fx: n.fx ?? existing?.fx ?? null,
@@ -128,33 +137,50 @@ function initSimulation() {
 
   const chargeForce = forceManyBody<WorkerNode>()
     .strength(currentConfig.repulsion)
-    .distanceMax(1500);
+    .distanceMax(2000);
 
   const centerForce = forceCenter<WorkerNode>(0, 0)
     .strength(currentConfig.gravity);
 
   const collideForce = forceCollide<WorkerNode>()
-    .radius(d => (d.size || 20) + currentConfig.collisionRadius)
-    .iterations(2);
+    .radius(d => (d.size || 8) + currentConfig.collisionRadius)
+    .iterations(3);
 
   simulation = forceSimulation<WorkerNode, WorkerLink>(currentNodes)
     .velocityDecay(currentConfig.damping)
     .force('charge', chargeForce)
     .force('link', linkForce)
     .force('center', centerForce)
-    .force('collide', collideForce)
-    .on('tick', () => {
-      const positions = currentNodes.map(n => ({
-        id: n.id,
-        x: n.x,
-        y: n.y,
-        vx: n.vx,
-        vy: n.vy
-      }));
-      self.postMessage({ type: 'tick', positions });
-    });
+    .force('collide', collideForce);
 
-  simulation.alpha(0.9).restart();
+  // Run 100 fast warmup ticks synchronously to untangle and relax the graph layout
+  for (let i = 0; i < 100; i++) {
+    simulation.tick();
+  }
+
+  // Immediately publish the untangled positions so first frame is perfectly spaced
+  const initialPositions = currentNodes.map(n => ({
+    id: n.id,
+    x: n.x,
+    y: n.y,
+    vx: n.vx,
+    vy: n.vy
+  }));
+  self.postMessage({ type: 'tick', positions: initialPositions });
+
+  // Stream subsequent ticks for smooth interactive settling and dragging
+  simulation.on('tick', () => {
+    const positions = currentNodes.map(n => ({
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      vx: n.vx,
+      vy: n.vy
+    }));
+    self.postMessage({ type: 'tick', positions });
+  });
+
+  simulation.alpha(0.3).restart();
 }
 
 function updateSimulationForces() {

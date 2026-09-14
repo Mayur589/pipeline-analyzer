@@ -9,7 +9,15 @@ import {
   formatRelationshipLabel
 } from '../types/graph';
 import { validateRelationship } from '../api/client';
-import { ArrowRight, X, ArrowLeftRight, Loader2, ShieldAlert } from 'lucide-react';
+import {
+  ArrowRight,
+  X,
+  ArrowLeftRight,
+  Loader2,
+  ShieldAlert,
+  Play,
+  Flame
+} from 'lucide-react';
 
 interface NodeInspectorProps {
   node: Node;
@@ -34,7 +42,12 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
     selectNode,
     selectEdge,
     nodeCategories,
-    appMode
+    appMode,
+    attackResult,
+    isSimulatingAttack,
+    runAttackSimulation,
+    selectedScenario,
+    setSelectedScenario
   } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<NodeProperties>(() =>
@@ -169,6 +182,108 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
           {nodeName}
         </h3>
       </div>
+
+      {/* Attack Mode Simulation Launcher */}
+      {!isEdit && (
+        <div className="p-4 border-b border-white/5 bg-gradient-to-b from-rose-950/30 to-transparent space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-rose-300 font-semibold text-xs">
+              <Flame className="w-4 h-4 text-rose-400" />
+              <span>Attack Simulation</span>
+            </div>
+            {attackResult?.startNodeId === node.id && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-mono border border-rose-500/30">
+                Active Origin
+              </span>
+            )}
+          </div>
+
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Run a Breadth-First Search (BFS) breach simulation originating from this node.
+          </p>
+
+          <div className="space-y-1">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              Scenario
+            </label>
+            <select
+              value={selectedScenario}
+              onChange={(e) => setSelectedScenario(e.target.value)}
+              disabled={isSimulatingAttack}
+              className="w-full bg-[#0B1220] border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500/60 cursor-pointer disabled:opacity-50"
+            >
+              <option value="compromised_maintainer_credentials">
+                Compromised Maintainer Credentials
+              </option>
+              <option value="supply_chain_poisoning">
+                Supply Chain Poisoning
+              </option>
+              <option value="ci_pipeline_takeover">
+                CI/CD Pipeline Takeover
+              </option>
+              <option value="registry_credential_leak">
+                Registry Credential Leak
+              </option>
+            </select>
+          </div>
+
+          <button
+            onClick={async () => {
+              await runAttackSimulation(node.id, selectedScenario);
+            }}
+            disabled={isSimulatingAttack}
+            className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSimulatingAttack ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Simulating Breach...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-white" />
+                <span>{attackResult?.startNodeId === node.id ? 'Re-run Simulation' : 'Simulate Attack'}</span>
+              </>
+            )}
+          </button>
+
+          {/* Node Status in Active Simulation */}
+          {attackResult && (() => {
+            const isOrigin = attackResult.startNodeId === node.id;
+            const stepTraversed = attackResult.steps.find((s) => s.targetNodeId === node.id);
+
+            return (
+              <div className="pt-2 border-t border-white/10 space-y-1.5 text-xs">
+                {isOrigin ? (
+                  <div className="text-rose-300 text-[11px] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                    <span>Breach origin node for current simulation</span>
+                  </div>
+                ) : stepTraversed ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Breach Status:</span>
+                      <span className={`px-1.5 py-0.5 rounded font-bold text-[10px] ${
+                        stepTraversed.outcome === 'COMPROMISED' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                        stepTraversed.outcome === 'SLOWED' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                        stepTraversed.outcome === 'BLOCKED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                        'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                      }`}>
+                        {stepTraversed.outcome}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 italic">{stepTraversed.reason}</p>
+                  </div>
+                ) : (
+                  <div className="text-slate-500 text-[11px]">
+                    Not reached in current simulation path.
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Properties List */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
@@ -418,13 +533,15 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
   onUpdateRelationship,
   onReverse
 }) => {
-  const { appMode } = useGraphStore();
-  const isEdit = appMode === 'edit';
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const { appMode, attackResult, setActiveStepIndex } = useGraphStore();
   const [allowedRels, setAllowedRels] = useState<string[]>([]);
   const [reverseAllowed, setReverseAllowed] = useState(false);
   const [isLoadingRels, setIsLoadingRels] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
 
+  const isEdit = appMode === 'edit';
+  const sourceCat = sourceNode?.categoryId || '';
+  const targetCat = targetNode?.categoryId || '';
   const sourceName = sourceNode
     ? getProperty(sourceNode.properties, 'name') || sourceNode.id
     : edge.sourceNodeId;
@@ -432,8 +549,8 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
     ? getProperty(targetNode.properties, 'name') || targetNode.id
     : edge.targetNodeId;
 
-  const sourceCat = sourceNode?.categoryId || '';
-  const targetCat = targetNode?.categoryId || '';
+  const simStepIndex = attackResult ? attackResult.steps.findIndex((s) => s.edgeId === edge.id) : -1;
+  const simStep = simStepIndex >= 0 ? attackResult!.steps[simStepIndex] : null;
 
   useEffect(() => {
     if (!sourceCat || !targetCat) return;
@@ -532,6 +649,36 @@ const EdgeInspector: React.FC<EdgeInspectorProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Simulation Hop Details */}
+      {!isEdit && simStep && (
+        <div className="p-4 border-b border-white/5 bg-white/5 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400 font-medium">Hop {simStepIndex + 1} Outcome:</span>
+            <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+              simStep.outcome === 'COMPROMISED' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+              simStep.outcome === 'SLOWED' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+              simStep.outcome === 'BLOCKED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+              'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+            }`}>
+              {simStep.outcome}
+            </span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed">{simStep.reason}</p>
+          {simStep.controlsTriggered.length > 0 && (
+            <div className="pt-1">
+              <span className="text-[10px] text-slate-400">Triggered Controls: </span>
+              <span className="text-cyan-300 font-mono text-[10px]">{simStep.controlsTriggered.join(', ')}</span>
+            </div>
+          )}
+          <button
+            onClick={() => setActiveStepIndex(simStepIndex)}
+            className="mt-2 w-full py-1.5 px-2.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] font-medium transition-colors cursor-pointer"
+          >
+            Jump to Hop {simStepIndex + 1}
+          </button>
+        </div>
+      )}
 
       {/* Semantic Relationship Editor */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
@@ -657,7 +804,12 @@ export const DetailsPanel: React.FC = () => {
     updateNodeProperties,
     updateEdgeRelationship,
     reverseEdge,
-    nodeCategories
+    nodeCategories,
+    appMode,
+    attackResult,
+    clearAttackSimulation,
+    activeStepIndex,
+    setActiveStepIndex
   } = useGraphStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
@@ -676,6 +828,106 @@ export const DetailsPanel: React.FC = () => {
   }, [selectedNodeId, selectedEdgeId, selectNode, selectEdge]);
 
   if (!selectedNode && !selectedEdge) {
+    if (appMode === 'attack' && attackResult) {
+      const startNode = nodes.find((n) => n.id === attackResult.startNodeId);
+      const startName = startNode ? getProperty(startNode.properties, 'name') || startNode.id : attackResult.startNodeId;
+
+      return (
+        <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none animate-fade-in">
+          <div className="px-4 py-2.5 bg-rose-500/10 border-b border-rose-500/20 text-xs text-rose-300 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="font-semibold">Attack Trace Overview</span>
+            </div>
+            <button
+              onClick={clearAttackSimulation}
+              className="p-1 rounded text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-5 border-b border-white/5 space-y-3">
+            <div>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Scenario</span>
+              <h3 className="text-sm font-semibold text-slate-100 mt-0.5 truncate">
+                {formatRelationshipLabel(attackResult.scenario)}
+              </h3>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Origin: <span className="text-rose-300 font-medium">{startName}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-white/5 border border-white/10">
+              <span className="text-xs text-slate-400">Severity</span>
+              <span className={`px-2 py-0.5 rounded font-bold text-xs ${
+                attackResult.overallSeverity.label === 'Critical' ? 'bg-rose-500/20 text-rose-300' :
+                attackResult.overallSeverity.label === 'High' ? 'bg-amber-500/20 text-amber-300' :
+                attackResult.overallSeverity.label === 'Medium' ? 'bg-yellow-500/20 text-yellow-300' :
+                'bg-emerald-500/20 text-emerald-300'
+              }`}>
+                {attackResult.overallSeverity.label} ({attackResult.overallSeverity.score.toFixed(1)}/10)
+              </span>
+            </div>
+          </div>
+
+          {/* Step Trace List */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider pb-1 border-b border-white/5 flex items-center justify-between">
+              <span>Simulation Path</span>
+              <span>{attackResult.steps.length} hops</span>
+            </div>
+
+            {attackResult.steps.map((step, idx) => {
+              const isCurrent = idx === activeStepIndex;
+              const srcNode = nodes.find((n) => n.id === step.sourceNodeId);
+              const tgtNode = nodes.find((n) => n.id === step.targetNodeId);
+              const sName = srcNode ? getProperty(srcNode.properties, 'name') || srcNode.id : step.sourceNodeId;
+              const tName = tgtNode ? getProperty(tgtNode.properties, 'name') || tgtNode.id : step.targetNodeId;
+
+              return (
+                <div
+                  key={step.edgeId + idx}
+                  onClick={() => setActiveStepIndex(idx)}
+                  className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                    isCurrent
+                      ? 'bg-white/10 border-cyan-500/60 shadow-md'
+                      : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1 mb-1">
+                    <span className="font-mono text-[10px] text-slate-400">Hop {idx + 1}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      step.outcome === 'COMPROMISED' ? 'bg-rose-500/20 text-rose-400' :
+                      step.outcome === 'SLOWED' ? 'bg-amber-500/20 text-amber-400' :
+                      step.outcome === 'BLOCKED' ? 'bg-emerald-500/20 text-emerald-400' :
+                      'bg-cyan-500/20 text-cyan-400'
+                    }`}>
+                      {step.outcome}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-200 truncate">
+                    {sName} → {tName}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                    {step.reason}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-4 border-t border-white/5">
+            <button
+              onClick={clearAttackSimulation}
+              className="w-full py-2 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+            >
+              Clear Simulation
+            </button>
+          </div>
+        </aside>
+      );
+    }
     return null;
   }
 

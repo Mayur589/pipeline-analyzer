@@ -5,7 +5,8 @@ import type {
   Graph,
   Node,
   Edge,
-  NodeProperties
+  NodeProperties,
+  AttackSimulationResult
 } from '../types/graph';
 import { getRelationshipColor } from '../types/graph.ts';
 
@@ -46,6 +47,33 @@ interface BackendGraph {
   ProjectId: string;
   Nodes: BackendNode[];
   Edges: BackendEdge[];
+}
+
+interface BackendAttackStep {
+  EdgeId: string;
+  SourceNodeId: string;
+  TargetNodeId: string;
+  Relationship: string;
+  Outcome: 'COMPROMISED' | 'SLOWED' | 'BLOCKED' | 'DETECTED';
+  Reason: string;
+  ControlsTriggered: string[];
+}
+
+interface BackendSeverityScore {
+  Score: number;
+  Label: 'Critical' | 'High' | 'Medium' | 'Low';
+}
+
+interface BackendAttackSimulationResult {
+  AttackId: string;
+  ProjectId: string;
+  StartNodeId: string;
+  Scenario: string;
+  Steps: BackendAttackStep[];
+  CompromisedNodeIds: string[];
+  BlockedNodeIds: string[];
+  DetectedAtStep: number | null;
+  OverallSeverity: BackendSeverityScore;
 }
 
 interface BackendErrorResponse {
@@ -416,6 +444,53 @@ export async function deleteEdge(projectId: string, edgeId: string): Promise<voi
   );
 }
 
+// -------------------------------------------------------------
+// 5. Attack Simulation Endpoints (/projects/{project_id}/attack)
+// -------------------------------------------------------------
+
+/**
+ * POST /projects/{project_id}/attack
+ * Runs an attack simulation starting from a given node.
+ */
+export async function simulateAttack(
+  projectId: string,
+  startNodeId: string,
+  scenario: string = 'compromised_maintainer_credentials'
+): Promise<AttackSimulationResult> {
+  const data = await request<BackendAttackSimulationResult>(
+    `/projects/${encodeURIComponent(projectId)}/attack`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        StartNodeId: startNodeId,
+        Scenario: scenario
+      })
+    }
+  );
+  return {
+    attackId: data.AttackId,
+    projectId: data.ProjectId,
+    startNodeId: data.StartNodeId,
+    scenario: data.Scenario,
+    steps: (data.Steps || []).map((s) => ({
+      edgeId: s.EdgeId,
+      sourceNodeId: s.SourceNodeId,
+      targetNodeId: s.TargetNodeId,
+      relationship: s.Relationship,
+      outcome: s.Outcome,
+      reason: s.Reason,
+      controlsTriggered: s.ControlsTriggered || []
+    })),
+    compromisedNodeIds: data.CompromisedNodeIds || [],
+    blockedNodeIds: data.BlockedNodeIds || [],
+    detectedAtStep: data.DetectedAtStep,
+    overallSeverity: {
+      score: data.OverallSeverity?.Score ?? 0,
+      label: data.OverallSeverity?.Label ?? 'Low'
+    }
+  };
+}
+
 export const api = {
   getNodeTypes,
   getRelationships,
@@ -430,5 +505,6 @@ export const api = {
   deleteNode,
   createEdge,
   editEdge,
-  deleteEdge
+  deleteEdge,
+  simulateAttack
 };

@@ -6,7 +6,8 @@ import type {
   CreateNodeInput,
   CreateEdgeInput,
   NodeProperties,
-  Project
+  Project,
+  AttackSimulationResult
 } from '../types/graph';
 import {
   api,
@@ -33,12 +34,29 @@ interface GraphStoreState {
   // Mode state
   appMode: 'edit' | 'attack';
 
+  // Attack simulation state
+  attackResult: AttackSimulationResult | null;
+  isSimulatingAttack: boolean;
+  attackError: string | null;
+  activeStepIndex: number;
+  isPlayingSimulation: boolean;
+  simulationPlaybackSpeed: number;
+  selectedScenario: string;
+
   // UI state
   isLoading: boolean;
   error: string | null;
 
   // Actions
   setAppMode: (mode: 'edit' | 'attack') => void;
+  setSelectedScenario: (scenario: string) => void;
+  runAttackSimulation: (startNodeId: string, scenario?: string) => Promise<AttackSimulationResult | null>;
+  clearAttackSimulation: () => void;
+  setActiveStepIndex: (index: number) => void;
+  setIsPlayingSimulation: (isPlaying: boolean) => void;
+  nextSimulationStep: () => void;
+  prevSimulationStep: () => void;
+  setSimulationPlaybackSpeed: (speedMs: number) => void;
   initialize: () => Promise<void>;
   loadProjects: () => Promise<Project[]>;
   selectProject: (projectId: string) => Promise<void>;
@@ -77,6 +95,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   nodeCategories: [],
   allRelationships: [],
   appMode: 'edit',
+  attackResult: null,
+  isSimulatingAttack: false,
+  attackError: null,
+  activeStepIndex: -1,
+  isPlayingSimulation: false,
+  simulationPlaybackSpeed: 800,
+  selectedScenario: 'compromised_maintainer_credentials',
   isLoading: false,
   error: null,
 
@@ -84,7 +109,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     if (mode === 'attack') {
       set({ appMode: mode, connectSourceId: null });
     } else {
-      set({ appMode: mode });
+      set({ appMode: mode, isPlayingSimulation: false });
     }
   },
 
@@ -138,7 +163,16 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   selectProject: async (projectId: string) => {
     if (projectId === get().projectId) return;
-    set({ projectId, selectedNodeId: null, selectedEdgeId: null, connectSourceId: null });
+    set({
+      projectId,
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      connectSourceId: null,
+      attackResult: null,
+      activeStepIndex: -1,
+      isPlayingSimulation: false,
+      attackError: null
+    });
     await get().loadGraph(projectId);
   },
 
@@ -478,6 +512,107 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   clearCanvas: () => {
-    set({ nodes: [], edges: [], selectedNodeId: null, selectedEdgeId: null });
+    set({
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      selectedEdgeId: null,
+      attackResult: null,
+      activeStepIndex: -1,
+      isPlayingSimulation: false,
+      attackError: null
+    });
+  },
+
+  setSelectedScenario: (scenario: string) => {
+    set({ selectedScenario: scenario });
+  },
+
+  setSimulationPlaybackSpeed: (speedMs: number) => {
+    set({ simulationPlaybackSpeed: speedMs });
+  },
+
+  runAttackSimulation: async (startNodeId: string, scenario?: string) => {
+    const { projectId, selectedScenario } = get();
+    if (!projectId) {
+      set({ attackError: 'No active project selected' });
+      return null;
+    }
+    const targetScenario = scenario || selectedScenario || 'compromised_maintainer_credentials';
+    set({
+      isSimulatingAttack: true,
+      attackError: null,
+      isPlayingSimulation: false
+    });
+
+    try {
+      const result = await api.simulateAttack(projectId, startNodeId, targetScenario);
+      set({
+        attackResult: result,
+        activeStepIndex: result.steps.length > 0 ? 0 : -1,
+        isPlayingSimulation: false,
+        attackError: null
+      });
+      return result;
+    } catch (err: any) {
+      console.error('Attack simulation failed:', err);
+      const errMsg = err.message || 'Attack simulation failed';
+      set({
+        attackError: errMsg,
+        attackResult: null,
+        activeStepIndex: -1,
+        isPlayingSimulation: false
+      });
+      return null;
+    } finally {
+      set({ isSimulatingAttack: false });
+    }
+  },
+
+  clearAttackSimulation: () => {
+    set({
+      attackResult: null,
+      activeStepIndex: -1,
+      isPlayingSimulation: false,
+      attackError: null
+    });
+  },
+
+  setActiveStepIndex: (index: number) => {
+    const { attackResult } = get();
+    if (!attackResult) {
+      set({ activeStepIndex: -1, isPlayingSimulation: false });
+      return;
+    }
+    const maxIndex = attackResult.steps.length;
+    const clamped = Math.max(-1, Math.min(index, maxIndex));
+    set({ activeStepIndex: clamped });
+  },
+
+  setIsPlayingSimulation: (isPlaying: boolean) => {
+    set({ isPlayingSimulation: isPlaying });
+  },
+
+  nextSimulationStep: () => {
+    const { attackResult, activeStepIndex } = get();
+    if (!attackResult || attackResult.steps.length === 0) return;
+    if (activeStepIndex < attackResult.steps.length) {
+      set({ activeStepIndex: activeStepIndex + 1 });
+      if (activeStepIndex + 1 >= attackResult.steps.length) {
+        set({ isPlayingSimulation: false });
+      }
+    } else {
+      set({ isPlayingSimulation: false });
+    }
+  },
+
+  prevSimulationStep: () => {
+    const { attackResult, activeStepIndex } = get();
+    if (!attackResult || attackResult.steps.length === 0) return;
+    if (activeStepIndex > 0) {
+      set({ activeStepIndex: activeStepIndex - 1 });
+    } else {
+      set({ activeStepIndex: 0 });
+    }
   }
 }));

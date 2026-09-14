@@ -40,17 +40,15 @@ export function drawNode(
   // 1. Halo Glow effect when selected or hovered
   if ((isSelected || isHovered) && displayConfig.haloGlow) {
     ctx.beginPath();
-    ctx.arc(x, y, baseRadius + 10, 0, Math.PI * 2);
-    ctx.fillStyle = isSelected ? 'rgba(99, 102, 241, 0.35)' : 'rgba(59, 130, 246, 0.25)';
+    ctx.arc(x, y, baseRadius + 5, 0, Math.PI * 2);
+    ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.35)' : 'rgba(56, 189, 248, 0.2)';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(x, y, baseRadius + 4, 0, Math.PI * 2);
-    ctx.strokeStyle = isSelected ? '#818cf8' : '#60a5fa';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
+    ctx.arc(x, y, baseRadius + 2.5, 0, Math.PI * 2);
+    ctx.strokeStyle = isSelected ? '#38bdf8' : 'rgba(56, 189, 248, 0.7)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   // 2. Render based on Node Type
@@ -97,8 +95,8 @@ function drawStandardNode(
   const color = node.color || '#3b82f6';
 
   // Fill gradient
-  const grad = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, r * 0.1, x, y, r);
-  grad.addColorStop(0, adjustColor(color, 40));
+  const grad = ctx.createRadialGradient(x - r * 0.25, y - r * 0.25, r * 0.1, x, y, r);
+  grad.addColorStop(0, adjustColor(color, 35));
   grad.addColorStop(1, color);
 
   ctx.beginPath();
@@ -106,8 +104,8 @@ function drawStandardNode(
   ctx.fillStyle = grad;
   ctx.fill();
 
-  ctx.strokeStyle = isSelected ? '#ffffff' : adjustColor(color, -30);
-  ctx.lineWidth = isSelected ? 3 : 1.5;
+  ctx.strokeStyle = isSelected ? '#ffffff' : adjustColor(color, -20);
+  ctx.lineWidth = isSelected ? 2.5 : 1.2;
   ctx.stroke();
 }
 
@@ -285,36 +283,35 @@ function drawNodeLabel(
   const text = node.label;
   if (!text) return;
 
-  ctx.font = `${isHighlighted ? '600' : '400'} ${fontSize}px Inter, system-ui, sans-serif`;
+  const fontSz = Math.max(fontSize, 13.5);
+  ctx.font = `${isHighlighted ? '600' : '500'} ${fontSz}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  const labelY = y + r + 6;
+  const labelY = y + r + 4;
   const paddingX = 6;
   const paddingY = 2;
   const metrics = ctx.measureText(text);
   const textWidth = metrics.width;
 
-  // Background pill for label
-  ctx.fillStyle = isHighlighted ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.75)';
+  // Background pill for label (Obsidian graph style)
+  ctx.fillStyle = isHighlighted ? 'rgba(15, 23, 42, 0.96)' : 'rgba(9, 13, 22, 0.82)';
   ctx.beginPath();
   ctx.roundRect(
     x - textWidth / 2 - paddingX,
     labelY - paddingY,
     textWidth + paddingX * 2,
-    fontSize + paddingY * 2,
+    fontSz + paddingY * 2 + 1,
     4
   );
   ctx.fill();
 
-  if (isHighlighted) {
-    ctx.strokeStyle = '#6366f1';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
+  ctx.strokeStyle = isHighlighted ? '#38bdf8' : 'rgba(255, 255, 255, 0.10)';
+  ctx.lineWidth = isHighlighted ? 1.5 : 0.8;
+  ctx.stroke();
 
-  // Label text
-  ctx.fillStyle = isHighlighted ? '#ffffff' : '#cbd5e1';
+  // Label text - clean, crisp and prominent
+  ctx.fillStyle = isHighlighted ? '#ffffff' : '#f1f5f9';
   ctx.fillText(text, x, labelY);
 }
 

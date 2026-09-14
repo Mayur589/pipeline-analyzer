@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGraphStore } from '../store/graphStore';
-import { Layers } from 'lucide-react';
+import { Layers, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { nodeCategories, nodes, appMode } = useGraphStore();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, categoryId: string) => {
     if (appMode === 'attack') {
@@ -16,17 +17,39 @@ export const Sidebar: React.FC = () => {
 
   const isEdit = appMode === 'edit';
 
+  if (isCollapsed) {
+    return (
+      <button
+        onClick={() => setIsCollapsed(false)}
+        className="absolute top-3.5 left-3.5 z-30 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F172A]/90 hover:bg-[#1E293B]/90 backdrop-blur-md border border-white/10 hover:border-cyan-500/40 text-slate-300 hover:text-white shadow-2xl transition-all cursor-pointer text-xs group animate-fade-in"
+        title="Expand Categories Sidebar"
+      >
+        <PanelLeftOpen className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+        <span className="font-semibold text-[11px] tracking-tight">Categories</span>
+      </button>
+    );
+  }
+
   return (
-    <aside className="w-[220px] shrink-0 bg-[#0B1220]/70 backdrop-blur-md border-r border-white/5 flex flex-col select-none z-20">
+    <aside className="w-[220px] shrink-0 bg-[#0B1220]/70 backdrop-blur-md border-r border-white/5 flex flex-col select-none z-20 transition-all duration-300 ease-in-out">
       {/* Header showing Color : Category Table */}
       <div className="px-3.5 py-3 border-b border-white/5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Layers className="w-3.5 h-3.5 text-cyan-400" />
           <span className="text-xs font-semibold text-slate-200 tracking-tight">Color : Category</span>
         </div>
-        <span className={`text-[10px] font-mono ${isEdit ? 'text-slate-500' : 'text-rose-400 font-medium'}`}>
-          {isEdit ? 'Drag to add' : 'Attack Mode'}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] font-mono ${isEdit ? 'text-slate-500' : 'text-rose-400 font-medium'}`}>
+            {isEdit ? 'Drag' : 'Attack'}
+          </span>
+          <button
+            onClick={() => setIsCollapsed(true)}
+            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Collapse Sidebar"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">

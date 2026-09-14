@@ -1,4 +1,5 @@
-import type { GraphNode, GraphEdge, DisplayConfig, FilterConfig } from '../types/graph';
+import type { GraphNode, GraphEdge, DisplayConfig, FilterConfig, AttackSimulationResult, AttackStep } from '../types/graph';
+import { OUTCOME_COLORS } from '../types/graph';
 import { drawNode } from './customRenderers';
 
 export interface Camera {
@@ -47,6 +48,12 @@ export class GraphEngine {
   private panStart = { x: 0, y: 0 };
   private particleOffset = 0;
 
+  // Attack simulation state
+  private attackResult: AttackSimulationResult | null = null;
+  private simulationStartTime = 0;
+  private isSpreading = false;
+  private hopDurationMs = 450;
+
   public setAppMode(mode: 'edit' | 'attack') {
     this.appMode = mode;
     if (mode === 'attack') {
@@ -54,10 +61,29 @@ export class GraphEngine {
     }
   }
 
+  public setAttackSimulation(result: AttackSimulationResult | null) {
+    const isNew = this.attackResult !== result;
+    this.attackResult = result;
+    if (result && isNew) {
+      this.simulationStartTime = performance.now();
+      this.isSpreading = true;
+    } else if (!result) {
+      this.isSpreading = false;
+    }
+  }
+
+  public restartSpreadAnimation() {
+    if (this.attackResult) {
+      this.simulationStartTime = performance.now();
+      this.isSpreading = true;
+    }
+  }
+
   // Callbacks
   private onSelectNode?: (id: string | null, e?: PointerEvent) => void;
   private onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
-  private onHoverNode?: (id: string | null) => void;
+  private onHoverNode?: (id: string | null, clientX?: number, clientY?: number) => void;
+  private onHoverEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
   private onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
   private onConnectNodes?: (sourceId: string, targetId: string) => void;
   private onConnectCancel?: () => void;
@@ -68,7 +94,8 @@ export class GraphEngine {
     options: {
       onSelectNode?: (id: string | null, e?: PointerEvent) => void;
       onSelectEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
-      onHoverNode?: (id: string | null) => void;
+      onHoverNode?: (id: string | null, clientX?: number, clientY?: number) => void;
+      onHoverEdge?: (id: string | null, clientX?: number, clientY?: number) => void;
       onCandidateHover?: (sourceId: string, candidateTargetId: string | null) => void;
       onConnectNodes?: (sourceId: string, targetId: string) => void;
       onConnectCancel?: () => void;
@@ -80,6 +107,7 @@ export class GraphEngine {
     this.onSelectNode = options.onSelectNode;
     this.onSelectEdge = options.onSelectEdge;
     this.onHoverNode = options.onHoverNode;
+    this.onHoverEdge = options.onHoverEdge;
     this.onCandidateHover = options.onCandidateHover;
     this.onConnectNodes = options.onConnectNodes;
     this.onConnectCancel = options.onConnectCancel;
@@ -262,6 +290,12 @@ export class GraphEngine {
     el.addEventListener('pointermove', this.onPointerMove.bind(this));
     el.addEventListener('pointerup', this.onPointerUp.bind(this));
     window.addEventListener('pointerup', this.onPointerUp.bind(this));
+    el.addEventListener('pointerleave', () => {
+      this.hoveredNodeId = null;
+      this.hoveredEdgeId = null;
+      if (this.onHoverNode) this.onHoverNode(null);
+      if (this.onHoverEdge) this.onHoverEdge(null);
+    });
     el.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
     el.addEventListener('dblclick', this.onDoubleClick.bind(this));
     el.addEventListener('contextmenu', this.onContextMenu.bind(this));
@@ -579,7 +613,7 @@ export class GraphEngine {
 
       this.hoveredNodeId = targetId;
       if (this.onHoverNode) {
-        this.onHoverNode(this.hoveredNodeId);
+        this.onHoverNode(this.hoveredNodeId, e.clientX, e.clientY);
       }
       this.canvas.style.cursor = target ? 'pointer' : 'crosshair';
       return;
@@ -612,7 +646,10 @@ export class GraphEngine {
         this.hoveredNodeId = hitNode.id;
         this.canvas.style.cursor = 'pointer';
         if (this.onHoverNode) {
-          this.onHoverNode(hitNode.id);
+          this.onHoverNode(hitNode.id, e.clientX, e.clientY);
+        }
+        if (this.onHoverEdge) {
+          this.onHoverEdge(null);
         }
       } else {
         const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
@@ -621,6 +658,9 @@ export class GraphEngine {
         this.canvas.style.cursor = hitEdge ? 'pointer' : 'grab';
         if (this.onHoverNode) {
           this.onHoverNode(null);
+        }
+        if (this.onHoverEdge) {
+          this.onHoverEdge(hitEdge ? hitEdge.id : null, e.clientX, e.clientY);
         }
       }
     }
@@ -632,7 +672,7 @@ export class GraphEngine {
         if (this.canvas.hasPointerCapture(e.pointerId)) {
           this.canvas.releasePointerCapture(e.pointerId);
         }
-      } catch (_) { }
+      } catch { }
     }
 
     if (this.isDraggingNode && this.dragNodeId) {
@@ -728,6 +768,44 @@ export class GraphEngine {
 
     const hasSearch = this.filterConfig?.searchQuery?.trim()?.length > 0;
 
+    // Automatic Attack spread animation calculation
+    const hasAttack = Boolean(this.attackResult && this.attackResult.steps.length > 0);
+    const now = performance.now();
+    const elapsed = this.isSpreading ? now - this.simulationStartTime : 9999999;
+    const currentHopIndex = hasAttack ? Math.floor(elapsed / this.hopDurationMs) : -1;
+    const currentHopFraction = hasAttack ? Math.min(1.0, Math.max(0.0, (elapsed % this.hopDurationMs) / this.hopDurationMs)) : 0;
+
+    const simulatedCompromisedNodes = new Set<string>();
+    const simulatedBlockedNodes = new Set<string>();
+    const simulatedDetectedNodes = new Set<string>();
+    const simulatedEdgesMap = new Map<string, { step: AttackStep; index: number }>();
+
+    if (hasAttack && this.attackResult) {
+      simulatedCompromisedNodes.add(this.attackResult.startNodeId);
+      const totalSteps = this.attackResult.steps.length;
+
+      if (this.isSpreading && currentHopIndex >= totalSteps + 1) {
+        this.isSpreading = false;
+      }
+
+      for (let i = 0; i < totalSteps; i++) {
+        const step = this.attackResult.steps[i];
+        simulatedEdgesMap.set(step.edgeId, { step, index: i });
+
+        const isReached = !this.isSpreading || i < currentHopIndex || (i === currentHopIndex && currentHopFraction >= 0.7);
+        if (isReached) {
+          if (step.outcome === 'BLOCKED') {
+            simulatedBlockedNodes.add(step.targetNodeId);
+          } else if (step.outcome === 'DETECTED') {
+            simulatedDetectedNodes.add(step.targetNodeId);
+            simulatedCompromisedNodes.add(step.targetNodeId);
+          } else {
+            simulatedCompromisedNodes.add(step.targetNodeId);
+          }
+        }
+      }
+    }
+
     // Draw Edges
     this.edges.forEach(edge => {
       const srcId = typeof edge.source === 'object' ? (edge.source as any).id : edge.source;
@@ -742,11 +820,47 @@ export class GraphEngine {
         ? srcId === activeFocusId || tgtId === activeFocusId
         : true;
 
-      const isDimmed =
+      const simData = simulatedEdgesMap.get(edge.id) || null;
+      let simStep: AttackStep | null = null;
+      let isEdgeActiveHop = false;
+      let edgeActiveFraction = 1.0;
+
+      if (simData) {
+        if (this.isSpreading) {
+          if (simData.index === currentHopIndex) {
+            simStep = simData.step;
+            isEdgeActiveHop = true;
+            edgeActiveFraction = currentHopFraction;
+          } else if (simData.index < currentHopIndex) {
+            simStep = simData.step;
+          }
+        } else {
+          simStep = simData.step;
+        }
+      }
+
+      let isDimmed =
         (this.displayConfig.dimNonNeighbors && activeFocusId && !isConnectedToFocus) ||
         (hasSearch && (!this.searchResults.has(srcId) || !this.searchResults.has(tgtId)));
 
-      this.drawEdge(srcNode, tgtNode, edge, isDimmed, isConnectedToFocus && Boolean(activeFocusId));
+      if (hasAttack) {
+        if (simStep) {
+          isDimmed = false;
+        } else if (!activeFocusId) {
+          isDimmed = true;
+        }
+      }
+
+      this.drawEdge(
+        srcNode,
+        tgtNode,
+        edge,
+        isDimmed,
+        isConnectedToFocus && Boolean(activeFocusId),
+        simStep,
+        isEdgeActiveHop,
+        edgeActiveFraction
+      );
     });
 
     // Draw Nodes
@@ -755,14 +869,23 @@ export class GraphEngine {
       const isHovered = node.id === this.hoveredNodeId;
       const isNeighbor = activeNeighbors.has(node.id);
 
+      const isStartNode = hasAttack && this.attackResult?.startNodeId === node.id;
+      const isBlockedNode = simulatedBlockedNodes.has(node.id);
+      const isDetectedNode = simulatedDetectedNodes.has(node.id);
+      const isCompromisedNode = simulatedCompromisedNodes.has(node.id) && !isBlockedNode;
+
       let isDimmed =
         (this.displayConfig.dimNonNeighbors && activeFocusId && !isNeighbor) ||
         (hasSearch && !this.searchResults.has(node.id));
 
-      if (this.connectingSourceId) {
-        if (node.id === this.connectingSourceId) {
-          isDimmed = false;
-        }
+      if (this.connectingSourceId && node.id === this.connectingSourceId) {
+        isDimmed = false;
+      }
+
+      if (isStartNode || isBlockedNode || isDetectedNode || isCompromisedNode) {
+        isDimmed = false;
+      } else if (hasAttack && !activeFocusId) {
+        isDimmed = true;
       }
 
       drawNode(
@@ -775,6 +898,26 @@ export class GraphEngine {
         () => this.draw()
       );
     });
+
+    // Draw simulation sleek glowing rings on breached nodes (no text clutter)
+    if (hasAttack && this.attackResult) {
+      this.nodes.forEach(node => {
+        const isStartNode = node.id === this.attackResult!.startNodeId;
+        const isBlocked = simulatedBlockedNodes.has(node.id);
+        const isDetected = simulatedDetectedNodes.has(node.id);
+        const isCompromised = simulatedCompromisedNodes.has(node.id) && !isBlocked;
+
+        if (isStartNode || isBlocked || isDetected || isCompromised) {
+          this.drawNodeSimulationBadge(
+            node,
+            isStartNode,
+            isBlocked,
+            isDetected,
+            isCompromised
+          );
+        }
+      });
+    }
 
     // Dynamic Connection Rubberband Preview (active exclusively during Create Link mode)
     const activeConnSourceId = this.connectingSourceId;
@@ -918,12 +1061,90 @@ export class GraphEngine {
     }
   }
 
+  private drawNodeSimulationBadge(
+    node: GraphNode,
+    isStartNode: boolean,
+    isBlocked: boolean,
+    isDetected: boolean,
+    isCompromised: boolean
+  ) {
+    const x = node.x ?? 0;
+    const y = node.y ?? 0;
+    const baseRadius = (node.size || 6) * this.displayConfig.nodeScale;
+
+    this.ctx.save();
+
+    if (isStartNode) {
+      // Pulsing crimson targeting reticle & glowing aura
+      const pulse = Math.sin(Date.now() / 180) * 2.5 + 4;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + pulse, 0, Math.PI * 2);
+      this.ctx.strokeStyle = '#ef4444';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      // Delicate reticle crosshairs
+      this.ctx.beginPath();
+      this.ctx.moveTo(x - baseRadius - pulse - 2, y);
+      this.ctx.lineTo(x - baseRadius - 1, y);
+      this.ctx.moveTo(x + baseRadius + 1, y);
+      this.ctx.lineTo(x + baseRadius + pulse + 2, y);
+      this.ctx.moveTo(x, y - baseRadius - pulse - 2);
+      this.ctx.lineTo(x, y - baseRadius - 1);
+      this.ctx.moveTo(x, y + baseRadius + 1);
+      this.ctx.lineTo(x, y + baseRadius + pulse + 2);
+      this.ctx.strokeStyle = '#ef4444';
+      this.ctx.lineWidth = 1.2;
+      this.ctx.stroke();
+    } else if (isBlocked) {
+      // Emerald shield glow ring
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + 4, 0, Math.PI * 2);
+      this.ctx.strokeStyle = '#10b981';
+      this.ctx.lineWidth = 2;
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + 7, 0, Math.PI * 2);
+      this.ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.stroke();
+    } else if (isDetected) {
+      // Cyan radar wave pulse expanding outward
+      const radarPhase = ((Date.now() / 20) % 18);
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + radarPhase, 0, Math.PI * 2);
+      this.ctx.strokeStyle = `rgba(6, 182, 212, ${Math.max(0, 1 - radarPhase / 18)})`;
+      this.ctx.lineWidth = 1.8;
+      this.ctx.stroke();
+    } else if (isCompromised) {
+      // Crimson warning breach glow
+      const breachPulse = Math.sin(Date.now() / 220) * 1.5 + 3.5;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + breachPulse, 0, Math.PI * 2);
+      this.ctx.strokeStyle = '#ef4444';
+      this.ctx.lineWidth = 1.8;
+      this.ctx.stroke();
+
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, baseRadius + breachPulse + 3, 0, Math.PI * 2);
+      this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
+      this.ctx.lineWidth = 1;
+      this.ctx.stroke();
+    }
+
+    this.ctx.restore();
+  }
+
   private drawEdge(
     src: GraphNode,
     tgt: GraphNode,
     edge: GraphEdge,
     isDimmed: boolean,
-    isHighlighted: boolean
+    isHighlighted: boolean,
+    simStep?: AttackStep | null,
+    isEdgeActiveHop?: boolean,
+    edgeActiveFraction?: number
   ) {
     const x1 = src.x ?? 0;
     const y1 = src.y ?? 0;
@@ -932,18 +1153,39 @@ export class GraphEngine {
 
     const isSelected = Boolean(this.selectedEdgeId && edge.id === this.selectedEdgeId);
     const isHovered = Boolean(this.hoveredEdgeId && edge.id === this.hoveredEdgeId);
+    const isSimulated = Boolean(simStep);
 
     this.ctx.save();
-    this.ctx.globalAlpha = isDimmed ? 0.2 : (isSelected || isHovered ? 1.0 : (isHighlighted ? 0.95 : 0.7));
+    this.ctx.globalAlpha = isDimmed ? 0.18 : (isSelected || isHovered || isSimulated ? 1.0 : (isHighlighted ? 0.95 : 0.7));
 
-    this.ctx.strokeStyle = isSelected
-      ? '#38bdf8'
-      : (isHovered ? '#67e8f9' : (isHighlighted ? '#818cf8' : (edge.color || '#475569')));
-    this.ctx.lineWidth = isSelected
-      ? 3.2
-      : (isHovered ? 2.6 : (isHighlighted ? this.displayConfig.linkThickness * 2 : this.displayConfig.linkThickness * 1.5));
+    let strokeColor = edge.color || '#475569';
+    if (isSimulated && simStep) {
+      strokeColor = OUTCOME_COLORS[simStep.outcome] || '#ef4444';
+    } else if (isSelected) {
+      strokeColor = '#38bdf8';
+    } else if (isHovered) {
+      strokeColor = '#67e8f9';
+    } else if (isHighlighted) {
+      strokeColor = '#818cf8';
+    }
 
-    if (edge.type === 'dashed') {
+    let lineWidth = this.displayConfig.linkThickness * 1.2;
+    if (isEdgeActiveHop) {
+      lineWidth = Math.max(3.5, this.displayConfig.linkThickness * 2.8);
+    } else if (isSimulated) {
+      lineWidth = Math.max(2.2, this.displayConfig.linkThickness * 1.8);
+    } else if (isSelected) {
+      lineWidth = 2.8;
+    } else if (isHovered) {
+      lineWidth = 2.2;
+    } else if (isHighlighted) {
+      lineWidth = this.displayConfig.linkThickness * 1.8;
+    }
+
+    this.ctx.strokeStyle = strokeColor;
+    this.ctx.lineWidth = lineWidth;
+
+    if (edge.type === 'dashed' || (simStep && simStep.outcome === 'SLOWED')) {
       this.ctx.setLineDash([6, 6]);
     } else {
       this.ctx.setLineDash([]);
@@ -971,14 +1213,14 @@ export class GraphEngine {
     }
 
     // Directional Arrowheads
-    if (this.displayConfig.showArrows && edge.type === 'directional') {
-      const tgtRadius = (tgt.size || 20) * this.displayConfig.nodeScale;
+    if (this.displayConfig.showArrows || isSimulated) {
+      const tgtRadius = (tgt.size || 6) * this.displayConfig.nodeScale;
       const angle = Math.atan2(y2 - midY, x2 - midX);
-      const arrowX = x2 - Math.cos(angle) * (tgtRadius + 6);
-      const arrowY = y2 - Math.sin(angle) * (tgtRadius + 6);
+      const arrowX = x2 - Math.cos(angle) * (tgtRadius + 4);
+      const arrowY = y2 - Math.sin(angle) * (tgtRadius + 4);
 
-      const arrowLength = 8;
-      this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : (isHighlighted ? '#818cf8' : '#64748b'));
+      const arrowLength = isEdgeActiveHop ? 9 : 7;
+      this.ctx.fillStyle = strokeColor;
       this.ctx.beginPath();
       this.ctx.moveTo(arrowX, arrowY);
       this.ctx.lineTo(
@@ -993,30 +1235,58 @@ export class GraphEngine {
       this.ctx.fill();
     }
 
-    // Edge Label Pill (if selected, hovered, or showLabels enabled at reasonable zoom)
-    const shouldShowLabel = isSelected || isHovered || (this.displayConfig.showLabels && this.camera.zoom >= 0.85);
-    if (shouldShowLabel && edge.label) {
+    // Edge Label Pill (ONLY when selected or hovered, to keep canvas completely uncluttered)
+    const shouldShowLabel = isSelected || isHovered || (this.displayConfig.showLabels && this.camera.zoom >= 1.2);
+    const displayLabel = isSimulated && simStep && (isSelected || isHovered)
+      ? `${edge.label || ''} [${simStep.outcome}]`
+      : edge.label;
+
+    if (shouldShowLabel && displayLabel) {
       this.ctx.save();
-      this.ctx.font = isSelected || isHovered ? 'bold 11px sans-serif' : '10px sans-serif';
-      const textWidth = this.ctx.measureText(edge.label).width;
+      this.ctx.font = isSelected || isHovered ? 'bold 11px -apple-system, sans-serif' : '10px -apple-system, sans-serif';
+      const textWidth = this.ctx.measureText(displayLabel).width;
       this.ctx.fillStyle = isSelected
         ? 'rgba(8, 47, 73, 0.95)'
         : (isHovered ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.85)');
       this.ctx.beginPath();
-      this.ctx.roundRect(midX - textWidth / 2 - 8, midY - 11, textWidth + 16, 22, 6);
+      this.ctx.roundRect(midX - textWidth / 2 - 6, midY - 10, textWidth + 12, 20, 5);
       this.ctx.fill();
-      this.ctx.strokeStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : 'rgba(148, 163, 184, 0.4)');
-      this.ctx.lineWidth = isSelected ? 2 : (isHovered ? 1.5 : 1);
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.lineWidth = isSelected || isHovered ? 1.5 : 0.8;
       this.ctx.stroke();
       this.ctx.fillStyle = isSelected ? '#38bdf8' : (isHovered ? '#67e8f9' : '#cbd5e1');
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
-      this.ctx.fillText(edge.label, midX, midY);
+      this.ctx.fillText(displayLabel, midX, midY);
       this.ctx.restore();
     }
 
-    // Animated Particles
-    if (this.displayConfig.animateParticles && !isDimmed) {
+    // Active Spreading Energy Surge Beam
+    if (isEdgeActiveHop && edgeActiveFraction !== undefined) {
+      const tPulse = edgeActiveFraction;
+      let pulseX: number, pulseY: number;
+
+      if (this.displayConfig.curvedEdges) {
+        pulseX = (1 - tPulse) * (1 - tPulse) * x1 + 2 * (1 - tPulse) * tPulse * midX + tPulse * tPulse * x2;
+        pulseY = (1 - tPulse) * (1 - tPulse) * y1 + 2 * (1 - tPulse) * tPulse * midY + tPulse * tPulse * y2;
+      } else {
+        pulseX = x1 + (x2 - x1) * tPulse;
+        pulseY = y1 + (y2 - y1) * tPulse;
+      }
+
+      this.ctx.beginPath();
+      this.ctx.arc(pulseX, pulseY, 5, 0, Math.PI * 2);
+      this.ctx.fillStyle = strokeColor;
+      this.ctx.fill();
+
+      this.ctx.beginPath();
+      this.ctx.arc(pulseX, pulseY, 11, 0, Math.PI * 2);
+      this.ctx.fillStyle = `${strokeColor}55`;
+      this.ctx.fill();
+    }
+
+    // Animated Particles (along breached or normal links)
+    if ((this.displayConfig.animateParticles || isSimulated) && !isDimmed) {
       const t = this.particleOffset;
       let px: number, py: number;
 
@@ -1029,10 +1299,13 @@ export class GraphEngine {
       }
 
       this.ctx.beginPath();
-      this.ctx.arc(px, py, 2.5, 0, Math.PI * 2);
-      this.ctx.fillStyle = isSelected
-        ? '#38bdf8'
-        : (isHighlighted ? '#a5b4fc' : 'rgba(148, 163, 184, 0.7)');
+      const pRadius = isSimulated ? 2.8 : 2.0;
+      this.ctx.arc(px, py, pRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = isSimulated
+        ? strokeColor
+        : (isSelected
+          ? '#38bdf8'
+          : (isHighlighted ? '#a5b4fc' : 'rgba(148, 163, 184, 0.7)'));
       this.ctx.fill();
     }
 

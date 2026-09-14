@@ -18,17 +18,8 @@ import {
 import type { RelationshipDefinition } from '../types/graph';
 import { validateRelationship } from '../api/client';
 import {
-  Maximize2,
-  RefreshCw,
-  ZoomIn,
-  ZoomOut,
   Link2,
-  Sliders,
   X,
-  Sparkles,
-  Layers,
-  Search,
-  Palette,
   AlertTriangle,
   Check,
   CheckCircle2,
@@ -36,20 +27,20 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
-  repulsion: -380,
-  linkDistance: 170,
-  linkStrength: 0.7,
-  gravity: 0.10,
-  collisionRadius: 28,
-  damping: 0.45,
+  repulsion: -600,
+  linkDistance: 190,
+  linkStrength: 0.35,
+  gravity: 0.02,
+  collisionRadius: 36,
+  damping: 0.42,
   enabled: true
 };
 
 const DEFAULT_DISPLAY: DisplayConfig = {
   showLabels: true,
-  labelSize: 12,
-  linkThickness: 1.2,
-  curvedEdges: true,
+  labelSize: 13,
+  linkThickness: 1.1,
+  curvedEdges: false, // Clean straight lines as requested
   showArrows: false,
   animateParticles: true,
   colorBy: 'type',
@@ -71,12 +62,11 @@ export const Prj1GraphCanvas: React.FC = () => {
   const engineRef = useRef<GraphEngine | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
-  const [physicsConfig, setPhysicsConfig] = useState<PhysicsConfig>(DEFAULT_PHYSICS);
-  const [displayConfig, setDisplayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY);
-  const [filterConfig, setFilterConfig] = useState<FilterConfig>(DEFAULT_FILTER);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isLegendOpen, setIsLegendOpen] = useState(false);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [physicsConfig] = useState<PhysicsConfig>(DEFAULT_PHYSICS);
+  const [displayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY);
+  const [filterConfig] = useState<FilterConfig>(DEFAULT_FILTER);
+  const [hoveredNodeInfo, setHoveredNodeInfo] = useState<{ id: string; x: number; y: number } | null>(null);
+  const hoveredNodeId = hoveredNodeInfo?.id || null;
 
   const {
     nodes,
@@ -92,8 +82,13 @@ export const Prj1GraphCanvas: React.FC = () => {
     removeNode,
     addEdge,
     nodeCategories,
-    appMode
+    appMode,
+    attackResult,
+    attackError,
+    clearAttackSimulation
   } = useGraphStore();
+
+  const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState<{ id: string; x: number; y: number } | null>(null);
 
   // Convert PipelineGuard entities to GraphNode and GraphEdge with degree-based sizing
   const { graphNodes, graphEdges } = useMemo(() => {
@@ -109,9 +104,8 @@ export const Prj1GraphCanvas: React.FC = () => {
       const rawName = getProperty(n.properties, 'name');
       const name = rawName !== undefined ? String(rawName) : n.id;
       const degree = degreeMap.get(n.id) || 0;
-      // Dynamic node size based on number of connections (degree):
-      // Base size 18px for isolated nodes, expanding up to 48px for central hub nodes
-      const dynamicSize = Math.min(48, Math.max(18, 18 + degree * 5));
+      // Obsidian graph aesthetic: Small, elegant dots (4.5px base up to 10px for hub nodes)
+      const dynamicSize = Math.min(10, Math.max(4.5, 4.5 + degree * 0.8));
 
       const imageUrl = getProperty(n.properties, 'imageUrl') || (n as any).imageUrl || n.properties?.image;
       const nodeType = imageUrl ? 'image' : 'document';
@@ -391,8 +385,11 @@ export const Prj1GraphCanvas: React.FC = () => {
       onSelectEdge: (id) => {
         callbacksRef.current.selectEdge(id);
       },
-      onHoverNode: (id) => {
-        setHoveredNodeId(id);
+      onHoverNode: (id, clientX, clientY) => {
+        setHoveredNodeInfo(id ? { id, x: clientX ?? 0, y: clientY ?? 0 } : null);
+      },
+      onHoverEdge: (id, clientX, clientY) => {
+        setHoveredEdgeInfo(id ? { id, x: clientX ?? 0, y: clientY ?? 0 } : null);
       },
       onConnectNodes: (sourceId, targetId) => {
         handleAttemptConnectRef.current(sourceId, targetId);
@@ -462,12 +459,13 @@ export const Prj1GraphCanvas: React.FC = () => {
     }
   }, [connectSourceId]);
 
-  // Synchronize App Mode to Engine
+  // Synchronize App Mode & Attack Simulation to Engine
   useEffect(() => {
     if (engineRef.current) {
       engineRef.current.setAppMode(appMode);
+      engineRef.current.setAttackSimulation(appMode === 'attack' ? attackResult : null);
     }
-  }, [appMode]);
+  }, [appMode, attackResult]);
 
   // Synchronize Display and Search Configs
   useEffect(() => {
@@ -527,11 +525,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     [nodeCategories, addNode, selectNode, appMode]
   );
 
-  const handleReheat = () => {
-    if (workerRef.current) {
-      workerRef.current.postMessage({ type: 'reheat' });
-    }
-  };
 
   return (
     <div
@@ -545,11 +538,176 @@ export const Prj1GraphCanvas: React.FC = () => {
         className="w-full h-full block cursor-grab active:cursor-grabbing"
       />
 
-      {/* Attack mode subtle badge */}
-      {appMode === 'attack' && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#12080F]/90 border border-rose-500/30 backdrop-blur-md text-rose-300 text-[11px] shadow-lg pointer-events-none">
-          <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-          <span className="font-medium tracking-tight">Attack Mode Active</span>
+      {/* Floating Hover Tooltip for Nodes */}
+      {hoveredNodeInfo && (() => {
+        const node = nodes.find((n) => n.id === hoveredNodeInfo.id);
+        if (!node) return null;
+        const category = nodeCategories.find((c) => c.id === node.categoryId);
+        const nodeName = getProperty(node.properties, 'name') || node.id;
+        const nodeDegree = edges.filter((e) => e.sourceNodeId === node.id || e.targetNodeId === node.id).length;
+
+        // Attack simulation context
+        const isStartNode = attackResult?.startNodeId === node.id;
+        const stepIndex = attackResult?.steps.findIndex((s) => s.targetNodeId === node.id) ?? -1;
+        const reachedStep = stepIndex >= 0 && attackResult ? attackResult.steps[stepIndex] : null;
+
+        // Custom properties entries (excluding name & image which are already shown)
+        const customProps = Object.entries(node.properties || {}).filter(
+          ([k, v]) => k !== 'name' && k !== 'image' && k !== 'imageUrl' && v !== undefined && v !== ''
+        );
+
+        return (
+          <div
+            style={{
+              left: Math.min(hoveredNodeInfo.x + 16, typeof window !== 'undefined' ? window.innerWidth - 320 : hoveredNodeInfo.x + 16),
+              top: Math.min(hoveredNodeInfo.y - 12, typeof window !== 'undefined' ? window.innerHeight - 300 : hoveredNodeInfo.y - 12)
+            }}
+            className="fixed pointer-events-none z-50 p-3.5 rounded-xl bg-[#0B111E]/95 border border-white/20 backdrop-blur-xl shadow-2xl text-xs space-y-2 min-w-[240px] max-w-sm animate-fade-in text-slate-200"
+          >
+            {/* Header: Category & Connections */}
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+              <div className="flex items-center gap-1.5 font-medium">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                  style={{ backgroundColor: category?.color || '#06b6d4' }}
+                />
+                <span className="text-slate-300 font-semibold">{category?.category || 'Node'}</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 bg-white/5 px-2 py-0.5 rounded-full">
+                {nodeDegree} {nodeDegree === 1 ? 'connection' : 'connections'}
+              </span>
+            </div>
+
+            {/* Node Title */}
+            <div>
+              <div className="text-white font-bold text-sm tracking-tight">{nodeName}</div>
+              {node.id !== nodeName && (
+                <div className="text-[10px] font-mono text-slate-500 truncate">{node.id}</div>
+              )}
+            </div>
+
+            {/* Attack Simulation Breach Details */}
+            {attackResult && (
+              <div className="pt-1 border-t border-white/10 space-y-1.5">
+                {isStartNode ? (
+                  <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/30 space-y-1">
+                    <div className="flex items-center gap-1.5 text-rose-300 font-bold text-xs">
+                      <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Attack Origin (Patient Zero)</span>
+                    </div>
+                    <div className="text-[11px] text-rose-200/80">
+                      Adversary entry point and simulation epicenter.
+                    </div>
+                  </div>
+                ) : reachedStep ? (
+                  <div className={`p-2 rounded-lg border space-y-1.5 ${
+                    reachedStep.outcome === 'COMPROMISED'
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-200'
+                      : reachedStep.outcome === 'BLOCKED'
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200'
+                      : reachedStep.outcome === 'SLOWED'
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-200'
+                      : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-200'
+                  }`}>
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="font-mono text-[10px] text-slate-300">
+                        Step {stepIndex + 1} of {attackResult.steps.length}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        reachedStep.outcome === 'COMPROMISED' ? 'bg-rose-500/25 text-rose-300' :
+                        reachedStep.outcome === 'BLOCKED' ? 'bg-emerald-500/25 text-emerald-300' :
+                        reachedStep.outcome === 'SLOWED' ? 'bg-amber-500/25 text-amber-300' :
+                        'bg-cyan-500/25 text-cyan-300'
+                      }`}>
+                        {reachedStep.outcome}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] leading-relaxed text-slate-200">
+                      {reachedStep.reason}
+                    </div>
+
+                    {reachedStep.controlsTriggered.length > 0 && (
+                      <div className="flex items-center gap-1 pt-1 flex-wrap">
+                        <span className="text-[10px] text-slate-400">Controls:</span>
+                        {reachedStep.controlsTriggered.map((ctrl, i) => (
+                          <span key={i} className="px-1.5 py-0.5 rounded bg-white/10 text-cyan-200 font-mono text-[10px]">
+                            {ctrl}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px]">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                    <span>Unreached / Protected from breach traversal</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Custom Properties (if available) */}
+            {customProps.length > 0 && (
+              <div className="pt-1.5 border-t border-white/10 space-y-1">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Properties</div>
+                <div className="space-y-0.5 max-h-24 overflow-y-auto custom-scrollbar pr-1">
+                  {customProps.slice(0, 5).map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400 capitalize">{key}:</span>
+                      <span className="text-slate-200 font-medium truncate max-w-[140px]">
+                        {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Floating Hover Tooltip for Simulated Edges */}
+      {hoveredEdgeInfo && attackResult && (() => {
+        const step = attackResult.steps.find((s) => s.edgeId === hoveredEdgeInfo.id);
+        if (!step) return null;
+        return (
+          <div
+            style={{ left: hoveredEdgeInfo.x + 12, top: hoveredEdgeInfo.y - 12 }}
+            className="fixed pointer-events-none z-50 p-2.5 rounded-xl bg-[#090D16]/95 border border-white/20 backdrop-blur-xl shadow-2xl text-xs space-y-1 min-w-[200px] max-w-xs"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-slate-200">{formatRelationshipLabel(step.relationship)}</span>
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                step.outcome === 'COMPROMISED' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                step.outcome === 'SLOWED' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                step.outcome === 'BLOCKED' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+              }`}>
+                {step.outcome}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-300">{step.reason}</div>
+            {step.controlsTriggered.length > 0 && (
+              <div className="text-[10px] text-slate-400">
+                Mitigating: {step.controlsTriggered.join(', ')}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Simulation Error Toast */}
+      {attackError && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-950/95 border border-rose-500/40 text-rose-200 text-xs shadow-2xl animate-fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{attackError}</span>
+          <button
+            onClick={clearAttackSimulation}
+            className="ml-2 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -572,307 +730,6 @@ export const Prj1GraphCanvas: React.FC = () => {
           </div>
         );
       })()}
-
-      {/* Floating Color : Category Table Reference */}
-      {isLegendOpen && (
-        <div className="absolute bottom-16 left-5 z-20 w-80 p-3.5 rounded-2xl bg-[#0F172A]/95 backdrop-blur-xl border border-white/15 shadow-2xl space-y-2 animate-fade-in text-xs">
-          <div className="flex items-center justify-between pb-2 border-b border-white/10">
-            <div className="flex items-center gap-2 font-semibold text-slate-200">
-              <Palette className="w-4 h-4 text-cyan-400" />
-              <span>Color : Category Reference</span>
-            </div>
-            <button
-              onClick={() => setIsLegendOpen(false)}
-              className="p-1 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
-              title="Close Reference"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <div className="max-h-60 overflow-y-auto space-y-1 custom-scrollbar pr-1">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/5">
-                  <th className="pb-1 font-medium w-8">Color</th>
-                  <th className="pb-1 font-medium">Category</th>
-                  <th className="pb-1 font-medium text-right">Nodes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {nodeCategories.map((cat) => {
-                  const count = nodes.filter((n) => n.categoryId === cat.id).length;
-                  return (
-                    <tr
-                      key={cat.id}
-                      onClick={() => {
-                        const firstNode = nodes.find((n) => n.categoryId === cat.id);
-                        if (firstNode) {
-                          callbacksRef.current.selectNode(firstNode.id);
-                          engineRef.current?.centerOnNode(firstNode.id);
-                        }
-                      }}
-                      className="hover:bg-white/5 cursor-pointer rounded transition-colors group"
-                      title={`Click to focus ${cat.category} nodes`}
-                    >
-                      <td className="py-1.5 pr-2">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm transition-transform group-hover:scale-125"
-                          style={{
-                            backgroundColor: cat.color || '#06b6d4',
-                            boxShadow: `0 0 8px ${cat.color || '#06b6d4'}80`
-                          }}
-                        />
-                      </td>
-                      <td className="py-1.5 text-slate-300 group-hover:text-cyan-300 truncate max-w-[140px] font-medium">
-                        {cat.category}
-                      </td>
-                      <td className="py-1.5 text-right font-mono text-[10px]">
-                        <span className={`px-1.5 py-0.5 rounded-full ${count > 0 ? 'bg-white/10 text-slate-200 font-semibold' : 'text-slate-600'}`}>
-                          {count}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Obsidian Graph Controls HUD */}
-      <div className="absolute bottom-5 left-5 z-20 flex items-center gap-1.5 p-1 rounded-xl bg-[#0F172A]/85 backdrop-blur-md border border-white/10 shadow-2xl">
-        <button
-          onClick={() => engineRef.current?.zoomIn()}
-          title="Zoom In (+)"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={() => engineRef.current?.zoomOut()}
-          title="Zoom Out (-)"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <ZoomOut className="w-4 h-4" />
-        </button>
-
-        <div className="w-[1px] h-4 bg-white/10 my-auto" />
-
-        <button
-          onClick={() => engineRef.current?.centerCamera()}
-          title="Center Camera (Double-click background)"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <Maximize2 className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={handleReheat}
-          title="Reheat Physics Simulation"
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-        </button>
-
-
-        <div className="w-[1px] h-4 bg-white/10 my-auto" />
-
-        <button
-          onClick={() => setIsLegendOpen(!isLegendOpen)}
-          title="Toggle Color : Category Table Reference"
-          className={`p-1.5 rounded-lg transition-colors flex items-center gap-1.5 px-2 text-xs cursor-pointer ${isLegendOpen
-            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-            : 'text-slate-400 hover:text-white hover:bg-white/10'
-            }`}
-        >
-          <Palette className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="font-medium">Color : Cat</span>
-        </button>
-
-        <div className="w-[1px] h-4 bg-white/10 my-auto" />
-
-        <button
-          onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-          title="Obsidian Graph Engine Settings"
-          className={`p-1.5 rounded-lg transition-colors ${isSettingsOpen
-            ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-            : 'text-slate-400 hover:text-white hover:bg-white/10'
-            }`}
-        >
-          <Sliders className="w-4 h-4" />
-        </button>
-
-        <div className="w-[1px] h-4 bg-white/10 my-auto" />
-
-        {/* Minimal Graph Statistics */}
-        <div className="px-2.5 text-[11px] font-mono text-slate-400">
-          <span className="text-slate-200 font-medium">{nodes.length}</span> nodes ·{' '}
-          <span className="text-slate-200 font-medium">{edges.length}</span> links
-        </div>
-      </div>
-
-      {/* Obsidian Graph View Settings Drawer */}
-      {isSettingsOpen && (
-        <aside className="absolute top-5 left-5 z-30 w-72 p-4 rounded-xl bg-[#0F172A]/90 backdrop-blur-xl border border-white/10 shadow-2xl text-xs space-y-4 animate-fade-in">
-          <div className="flex items-center justify-between pb-2 border-b border-white/10">
-            <div className="flex items-center gap-2 font-medium text-slate-200">
-              <Sliders className="w-4 h-4 text-indigo-400" />
-              <span>Graph Engine Settings</span>
-            </div>
-            <button
-              onClick={() => setIsSettingsOpen(false)}
-              className="p-1 rounded text-slate-400 hover:text-white transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Search Filter */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={filterConfig.searchQuery}
-              onChange={(e) => setFilterConfig({ ...filterConfig, searchQuery: e.target.value })}
-              placeholder="Search graph nodes..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-800/80 border border-white/10 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
-            />
-          </div>
-
-          {/* Forces Section */}
-          <div className="space-y-3">
-            <div className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Physics Forces</span>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Repulsion</span>
-                <span className="font-mono">{physicsConfig.repulsion}</span>
-              </div>
-              <input
-                type="range"
-                min="-600"
-                max="-30"
-                step="10"
-                value={physicsConfig.repulsion}
-                onChange={(e) =>
-                  setPhysicsConfig({ ...physicsConfig, repulsion: Number(e.target.value) })
-                }
-                className="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Link Distance</span>
-                <span className="font-mono">{physicsConfig.linkDistance}</span>
-              </div>
-              <input
-                type="range"
-                min="20"
-                max="200"
-                step="5"
-                value={physicsConfig.linkDistance}
-                onChange={(e) =>
-                  setPhysicsConfig({ ...physicsConfig, linkDistance: Number(e.target.value) })
-                }
-                className="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-slate-400 text-[11px]">
-                <span>Center Gravity</span>
-                <span className="font-mono">{physicsConfig.gravity}</span>
-              </div>
-              <input
-                type="range"
-                min="0.02"
-                max="0.35"
-                step="0.01"
-                value={physicsConfig.gravity}
-                onChange={(e) =>
-                  setPhysicsConfig({ ...physicsConfig, gravity: Number(e.target.value) })
-                }
-                className="w-full accent-indigo-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-              />
-            </div>
-          </div>
-
-          {/* Display Options Section */}
-          <div className="space-y-2.5 pt-2 border-t border-white/10">
-            <div className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Display & Aesthetics</span>
-            </div>
-
-            <label className="flex items-center justify-between cursor-pointer text-slate-300">
-              <span>Curved Links</span>
-              <input
-                type="checkbox"
-                checked={displayConfig.curvedEdges}
-                onChange={(e) =>
-                  setDisplayConfig({ ...displayConfig, curvedEdges: e.target.checked })
-                }
-                className="accent-indigo-500 rounded"
-              />
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer text-slate-300">
-              <span>Animated Particles</span>
-              <input
-                type="checkbox"
-                checked={displayConfig.animateParticles}
-                onChange={(e) =>
-                  setDisplayConfig({ ...displayConfig, animateParticles: e.target.checked })
-                }
-                className="accent-indigo-500 rounded"
-              />
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer text-slate-300">
-              <span>Halo Glow</span>
-              <input
-                type="checkbox"
-                checked={displayConfig.haloGlow}
-                onChange={(e) =>
-                  setDisplayConfig({ ...displayConfig, haloGlow: e.target.checked })
-                }
-                className="accent-indigo-500 rounded"
-              />
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer text-slate-300">
-              <span>Dim Non-Neighbors</span>
-              <input
-                type="checkbox"
-                checked={displayConfig.dimNonNeighbors}
-                onChange={(e) =>
-                  setDisplayConfig({ ...displayConfig, dimNonNeighbors: e.target.checked })
-                }
-                className="accent-indigo-500 rounded"
-              />
-            </label>
-
-            <label className="flex items-center justify-between cursor-pointer text-slate-300">
-              <span>Show Labels</span>
-              <input
-                type="checkbox"
-                checked={displayConfig.showLabels}
-                onChange={(e) =>
-                  setDisplayConfig({ ...displayConfig, showLabels: e.target.checked })
-                }
-                className="accent-indigo-500 rounded"
-              />
-            </label>
-          </div>
-        </aside>
-      )}
 
       {/* Relationship Selection Modal for multiple valid relationships */}
       {relationshipPicker && (
