@@ -12,6 +12,7 @@ use backend::CreateProject;
 use backend::EditEdge;
 use backend::EditNode;
 use backend::EditProject;
+use backend::SimulateAttack;
 use backend::ValidateRelationshipQuery;
 use backend::create_edge;
 use backend::create_node;
@@ -27,8 +28,10 @@ use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
 use backend::get_relationships;
+use backend::simulate_attack_handler;
 use backend::types::ApiError;
 use backend::types::PropertyField;
+use backend::types::StepOutcome;
 use backend::validate_relationship;
 
 async fn setup_test_state() -> AppState {
@@ -401,4 +404,212 @@ async fn test_edge_crud_validation_and_cascade() {
         .await
         .expect_err("deleting already cascaded edge should 404");
     assert!(matches!(delete_err, ApiError::EdgeNotFound));
+}
+
+#[tokio::test]
+async fn test_simulate_attack() {
+    let state = setup_test_state().await;
+
+    let Json(proj) = create_project(
+        State(state.clone()),
+        Json(CreateProject {
+            name: String::from("Attack Sim Project"),
+        }),
+    )
+    .await
+    .expect("project creation should succeed");
+
+    // identity_people --contributes_to--> source_control (no branch protection: compromised)
+    let Json(identity) = create_node(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(CreateNode {
+            category_id: String::from("identity_people"),
+            properties: HashMap::new(),
+        }),
+    )
+    .await
+    .expect("identity node creation should succeed");
+
+    let mut unprotected_repo_props = HashMap::new();
+    unprotected_repo_props.insert(
+        String::from("branchProtection"),
+        PropertyField::Boolean(false),
+    );
+    let Json(repo) = create_node(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(CreateNode {
+            category_id: String::from("source_control"),
+            properties: unprotected_repo_props,
+        }),
+    )
+    .await
+    .expect("repo node creation should succeed");
+
+    // source_control --triggers--> cicd_pipeline (approval required: slowed, not blocked)
+    let mut guarded_pipeline_props = HashMap::new();
+    guarded_pipeline_props.insert(
+        String::from("approvalRequired"),
+        PropertyField::Boolean(true),
+    );
+    let Json(pipeline) = create_node(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(CreateNode {
+            category_id: String::from("cicd_pipeline"),
+            properties: guarded_pipeline_props,
+        }),
+    )
+    .await
+    .expect("pipeline node creation should succeed");
+
+    let Json(edge_to_repo) = create_edge(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(CreateEdge {
+            source_node_id: identity.id.clone(),
+            target_node_id: repo.id.clone(),
+            relationship: String::from("contributes_to"),
+        }),
+    )
+    .await
+    .expect("identity -> repo edge should succeed");
+
+    let Json(edge_to_pipeline) = create_edge(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(CreateEdge {
+            source_node_id: repo.id.clone(),
+            target_node_id: pipeline.id.clone(),
+            relationship: String::from("triggers"),
+        }),
+    )
+    .await
+    .expect("repo -> pipeline edge should succeed");
+
+    let Json(result) = simulate_attack_handler(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(SimulateAttack {
+            start_node_id: identity.id.clone(),
+            scenario: String::from("compromised_maintainer_credentials"),
+        }),
+    )
+    .await
+    .expect("attack simulation should succeed");
+
+    assert_eq!(result.project_id, proj.id);
+    assert_eq!(result.start_node_id, identity.id);
+    assert!(result.attack_id.starts_with("attack_"));
+    assert_eq!(result.steps.len(), 2);
+
+    let repo_step = result
+        .steps
+        .iter()
+        .find(|s| s.edge_id == edge_to_repo.id)
+        .expect("repo step should be present");
+    assert_eq!(repo_step.outcome, StepOutcome::Compromised);
+    assert!(repo_step.controls_triggered.is_empty());
+
+    let pipeline_step = result
+        .steps
+        .iter()
+        .find(|s| s.edge_id == edge_to_pipeline.id)
+        .expect("pipeline step should be present");
+    assert_eq!(pipeline_step.outcome, StepOutcome::Slowed);
+    assert_eq!(
+        pipeline_step.controls_triggered,
+        vec![String::from("approvalRequired")]
+    );
+
+    // Slowed still propagates, so all three nodes end up compromised, none blocked.
+    assert_eq!(result.compromised_node_ids.len(), 3);
+    assert!(result.compromised_node_ids.contains(&identity.id));
+    assert!(result.compromised_node_ids.contains(&repo.id));
+    assert!(result.compromised_node_ids.contains(&pipeline.id));
+    assert!(result.blocked_node_ids.is_empty());
+    assert!(result.detected_at_step.is_none());
+
+    // Now flip branch protection on and re-run: the repo hop should be blocked
+    // and the attack should not reach the pipeline.
+    let mut protected_props = HashMap::new();
+    protected_props.insert(
+        String::from("branchProtection"),
+        PropertyField::Boolean(true),
+    );
+    let Json(_) = edit_node(
+        State(state.clone()),
+        Path((proj.id.clone(), repo.id.clone())),
+        Json(EditNode {
+            properties: protected_props,
+        }),
+    )
+    .await
+    .expect("edit node should succeed");
+
+    let Json(blocked_result) = simulate_attack_handler(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(SimulateAttack {
+            start_node_id: identity.id.clone(),
+            scenario: String::from("compromised_maintainer_credentials"),
+        }),
+    )
+    .await
+    .expect("attack simulation should succeed");
+
+    assert_eq!(blocked_result.steps.len(), 1);
+    assert_eq!(blocked_result.steps[0].outcome, StepOutcome::Blocked);
+    assert_eq!(blocked_result.compromised_node_ids.len(), 1);
+    assert!(blocked_result.compromised_node_ids.contains(&identity.id));
+    assert_eq!(blocked_result.blocked_node_ids, vec![repo.id.clone()]);
+
+    // Nonexistent project should 404.
+    let missing_project_err = simulate_attack_handler(
+        State(state.clone()),
+        Path(String::from("nonexistent")),
+        Json(SimulateAttack {
+            start_node_id: identity.id.clone(),
+            scenario: String::from("compromised_maintainer_credentials"),
+        }),
+    )
+    .await
+    .expect_err("simulating on a missing project should fail");
+    assert!(matches!(missing_project_err, ApiError::ProjectNotFound));
+
+    // Start node not in the project should 404 as NodeNotFound.
+    let missing_node_err = simulate_attack_handler(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(SimulateAttack {
+            start_node_id: String::from("node_does_not_exist"),
+            scenario: String::from("compromised_maintainer_credentials"),
+        }),
+    )
+    .await
+    .expect_err("simulating from a missing node should fail");
+    assert!(matches!(missing_node_err, ApiError::NodeNotFound));
+
+    // Empty project (no nodes at all) should reject with EmptyGraph.
+    let Json(empty_proj) = create_project(
+        State(state.clone()),
+        Json(CreateProject {
+            name: String::from("Empty Project"),
+        }),
+    )
+    .await
+    .expect("empty project creation should succeed");
+
+    let empty_graph_err = simulate_attack_handler(
+        State(state),
+        Path(empty_proj.id),
+        Json(SimulateAttack {
+            start_node_id: String::from("irrelevant"),
+            scenario: String::from("compromised_maintainer_credentials"),
+        }),
+    )
+    .await
+    .expect_err("simulating on an empty project should fail");
+    assert!(matches!(empty_graph_err, ApiError::EmptyGraph));
 }

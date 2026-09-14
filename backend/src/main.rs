@@ -19,6 +19,7 @@ use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
 use backend::get_relationships;
+use backend::simulate_attack_handler;
 use backend::validate_relationship;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
@@ -48,7 +49,8 @@ async fn main() {
         .route("/{project_id}/nodes", post(create_node))
         .route("/{project_id}/nodes/{node_id}", patch(edit_node).delete(delete_node))
         .route("/{project_id}/edges", post(create_edge))
-        .route("/{project_id}/edges/{edge_id}", patch(edit_edge).delete(delete_edge));
+        .route("/{project_id}/edges/{edge_id}", patch(edit_edge).delete(delete_edge))
+        .route("/{project_id}/attack", post(simulate_attack_handler));
 
     let app = Router::new()
         .merge(base_routes)

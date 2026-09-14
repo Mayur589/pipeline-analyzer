@@ -64,6 +64,48 @@ pub struct Graph {
     pub edges: Vec<Edge>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StepOutcome {
+    Compromised,
+    Slowed,
+    Blocked,
+    Detected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct AttackStep {
+    pub edge_id: String,
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relationship: String,
+    pub outcome: StepOutcome,
+    pub reason: String,
+    pub controls_triggered: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct SeverityScore {
+    pub score: f64,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct AttackSimulationResult {
+    pub attack_id: String,
+    pub project_id: String,
+    pub start_node_id: String,
+    pub scenario: String,
+    pub steps: Vec<AttackStep>,
+    pub compromised_node_ids: Vec<String>,
+    pub blocked_node_ids: Vec<String>,
+    pub detected_at_step: Option<usize>,
+    pub overall_severity: SeverityScore,
+}
+
 #[derive(Debug, Clone, Copy, strum::Display)]
 #[derive(thiserror::Error)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
@@ -74,15 +116,18 @@ pub enum ApiError {
     NodeNotFound,
     EdgeNotFound,
     ProjectNotFound,
+    EmptyGraph, // new: nothing to simulate against
 }
 
 impl ApiError {
     fn status_code(self) -> StatusCode {
         match self {
-            Self::InvalidCategoryConnection | Self::InvalidRelationship => StatusCode::BAD_REQUEST,
             Self::DuplicateEdge => StatusCode::CONFLICT,
             Self::NodeNotFound | Self::EdgeNotFound | Self::ProjectNotFound => {
                 StatusCode::NOT_FOUND
+            }
+            Self::InvalidCategoryConnection | Self::InvalidRelationship | Self::EmptyGraph => {
+                StatusCode::BAD_REQUEST
             }
         }
     }
@@ -93,7 +138,7 @@ impl IntoResponse for ApiError {
         let status = self.status_code();
 
         let response = ErrorResponse {
-            code: self.to_string(),
+            code: status.as_str().to_string(),
             message: self.to_string(),
         };
 

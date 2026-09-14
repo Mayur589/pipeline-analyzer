@@ -1,3 +1,4 @@
+pub mod attack;
 pub mod database;
 pub mod schema;
 pub mod types;
@@ -17,6 +18,7 @@ use serde::Deserialize;
 use crate::database::Database;
 use crate::database::DatabaseStore;
 use crate::types::ApiError;
+use crate::types::AttackSimulationResult;
 use crate::types::Edge;
 use crate::types::Graph;
 use crate::types::Node;
@@ -569,6 +571,64 @@ pub async fn delete_edge(
     }
 }
 
+/// Simulates an attack starting from `start_node_id`, propagating through
+/// the project's graph according to each node's configured security
+/// controls, and returns a step-by-step trace for the frontend to animate.
+///
+/// # Errors
+///
+/// Returns [`ApiError::ProjectNotFound`] if the project does not exist,
+/// [`ApiError::NodeNotFound`] if `start_node_id` does not belong to the
+/// project, or [`ApiError::EmptyGraph`] if the project has no nodes to
+/// simulate against.
+pub async fn simulate_attack_handler(
+    State(state): State<AppState>,
+    Path(project_id): Path<String>,
+    Json(request): Json<SimulateAttack>,
+) -> ApiResult<AttackSimulationResult> {
+    let db = state.db.read().await;
+
+    if !project_exists(&db, &project_id) {
+        return Err(ApiError::ProjectNotFound);
+    }
+
+    let nodes: Vec<Node> = db
+        .nodes
+        .iter()
+        .filter(|n| node_in_project(&db, &n.id, &project_id))
+        .cloned()
+        .collect();
+
+    if nodes.is_empty() {
+        return Err(ApiError::EmptyGraph);
+    }
+
+    if !nodes.iter().any(|n| n.id == request.start_node_id) {
+        return Err(ApiError::NodeNotFound);
+    }
+
+    let edges: Vec<Edge> = db
+        .edges
+        .iter()
+        .filter(|e| edge_in_project(&db, &e.id, &project_id))
+        .cloned()
+        .collect();
+
+    drop(db);
+
+    let graph = Graph {
+        project_id: project_id.clone(),
+        nodes,
+        edges,
+    };
+
+    let attack_id = generate_id("attack");
+    let result =
+        attack::simulate_attack(&graph, attack_id, &request.start_node_id, &request.scenario);
+
+    Ok(Json(result))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateProject {
@@ -613,4 +673,11 @@ pub struct CreateEdge {
 #[serde(rename_all = "PascalCase")]
 pub struct EditEdge {
     pub relationship: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct SimulateAttack {
+    pub start_node_id: String,
+    pub scenario: String, // could be an enum later once you have multiple attack types
 }
