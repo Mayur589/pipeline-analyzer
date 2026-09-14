@@ -386,12 +386,7 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const engine = new GraphEngine(canvasRef.current, {
       onSelectNode: (id) => {
-        if (id) {
-          callbacksRef.current.selectNode(id);
-        } else {
-          callbacksRef.current.selectNode(null);
-          callbacksRef.current.setConnectSourceId(null);
-        }
+        callbacksRef.current.selectNode(id);
       },
       onSelectEdge: (id) => {
         callbacksRef.current.selectEdge(id);

@@ -454,9 +454,10 @@ export class GraphEngine {
     // -------------------------------------------------------------
     if (this.connectingSourceId) {
       if (isLeftClick || isRightClick) {
-        const targetNode =
-          this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId) ||
-          (this.connectingCandidateId ? this.nodesMap.get(this.connectingCandidateId) || null : null);
+        const hitNodeDirect = this.hitTest(worldPos.x, worldPos.y, 16);
+        const candidateSnapNode = this.findCandidateTargetNode(worldPos.x, worldPos.y, this.connectingSourceId);
+        const candidateHoverNode = this.connectingCandidateId ? this.nodesMap.get(this.connectingCandidateId) || null : null;
+        const targetNode = hitNodeDirect || candidateSnapNode || candidateHoverNode;
 
         const sourceId = this.connectingSourceId;
 
@@ -485,7 +486,7 @@ export class GraphEngine {
     const hitNode = this.hitTest(worldPos.x, worldPos.y, 16);
 
     // -------------------------------------------------------------
-    // RIGHT-CLICK: Enter Connection Phase (Rubberband line + green/red lights) in Edit Mode
+    // RIGHT-CLICK: Start Connection Phase in Edit Mode
     // -------------------------------------------------------------
     if (isRightClick) {
       if (hitNode) {
@@ -494,27 +495,21 @@ export class GraphEngine {
         } else {
           this.setConnectingSource(null);
         }
-        if (this.onSelectNode) {
-          this.onSelectNode(hitNode.id, e);
-        }
       } else {
         this.setConnectingSource(null);
-        if (this.onSelectNode) {
-          this.onSelectNode(null, e);
-        }
       }
       return;
     }
 
     // -------------------------------------------------------------
-    // LEFT-CLICK: Enter / Toggle Selection Mode (Toggle Phase: green/red lights + physics drag, NO connection rubberband)
+    // LEFT-CLICK: Toggle Details / Node Physics Drag
     // -------------------------------------------------------------
     if (isLeftClick) {
       if (hitNode) {
-        // Ensure connection mode is strictly null on left-click
+        // Ensure connection mode is null on left-click when not connecting
         this.setConnectingSource(null);
 
-        // Toggle node selection if clicking the already-selected node
+        // Toggle node selection for details panel
         const isAlreadySelected = this.selectedNodeId === hitNode.id;
         const newSelectedId = isAlreadySelected ? null : hitNode.id;
 
@@ -537,20 +532,26 @@ export class GraphEngine {
       } else {
         const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
         if (hitEdge) {
-          this.selectedEdgeId = hitEdge.id;
+          const isAlreadySelected = this.selectedEdgeId === hitEdge.id;
+          const newSelectedEdgeId = isAlreadySelected ? null : hitEdge.id;
+
+          this.selectedEdgeId = newSelectedEdgeId;
           this.selectedNodeId = null;
           this.connectingCandidateId = null;
           this.candidateValidation = null;
           this.setConnectingSource(null);
           this.isPanning = false;
-          if (this.onSelectEdge) this.onSelectEdge(hitEdge.id, e.clientX, e.clientY);
+
+          if (this.onSelectEdge) this.onSelectEdge(newSelectedEdgeId, e.clientX, e.clientY);
         } else {
           this.isPanning = true;
           this.panStart = { x: screenX - this.camera.x, y: screenY - this.camera.y };
           this.selectedNodeId = null;
+          this.selectedEdgeId = null;
           this.connectingCandidateId = null;
           this.candidateValidation = null;
           this.setConnectingSource(null);
+
           if (this.onSelectNode) this.onSelectNode(null, e);
           if (this.onSelectEdge) this.onSelectEdge(null);
         }
