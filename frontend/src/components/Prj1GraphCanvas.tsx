@@ -12,7 +12,6 @@ import type {
 } from '../types/graph';
 import { getProperty, createDefaultProperties } from '../types/graph';
 import {
-  getRelationshipColor,
   getRelationshipGroupInfo,
   formatRelationshipLabel
 } from '../types/graph';
@@ -29,9 +28,7 @@ import {
   Sparkles,
   Layers,
   Search,
-  Trash2,
   Palette,
-  ImageOff,
   AlertTriangle,
   Check,
   CheckCircle2
@@ -77,13 +74,8 @@ export const Prj1GraphCanvas: React.FC = () => {
   const [displayConfig, setDisplayConfig] = useState<DisplayConfig>(DEFAULT_DISPLAY);
   const [filterConfig, setFilterConfig] = useState<FilterConfig>(DEFAULT_FILTER);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isLegendOpen, setIsLegendOpen] = useState(true);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    nodeId: string;
-    x: number;
-    y: number;
-  } | null>(null);
 
   const {
     nodes,
@@ -98,7 +90,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     addNode,
     removeNode,
     addEdge,
-    updateNodeProperties,
     nodeCategories
   } = useGraphStore();
 
@@ -141,7 +132,7 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const gEdges: GraphEdge[] = edges.map((e) => {
       const label = formatRelationshipLabel(e.relationshipId);
-      const color = getRelationshipColor(e.relationshipId);
+      const color = '#475569';
 
       return {
         id: e.id,
@@ -193,7 +184,6 @@ export const Prj1GraphCanvas: React.FC = () => {
       if (alreadyConnected) {
         showToast('Nodes are already connected.', 'error');
         setConnectSourceId(null);
-        setContextMenu(null);
         return;
       }
 
@@ -220,7 +210,6 @@ export const Prj1GraphCanvas: React.FC = () => {
           const tgtCat = nodeCategories.find((c) => c.id === tgt.categoryId)?.label || tgt.categoryId;
           showToast(`Invalid Connection: ${srcCat} cannot connect to ${tgtCat}.`, 'error');
           setConnectSourceId(null);
-          setContextMenu(null);
           return;
         }
 
@@ -231,14 +220,12 @@ export const Prj1GraphCanvas: React.FC = () => {
         });
         showToast(`Connected: ${formatRelationshipLabel(relId)}`, 'success');
         setConnectSourceId(null);
-        setContextMenu(null);
         if (workerRef.current) {
           workerRef.current.postMessage({ type: 'reheat' });
         }
       } catch (err: any) {
         showToast(err.message || 'Failed to validate connection.', 'error');
         setConnectSourceId(null);
-        setContextMenu(null);
       }
     },
     [nodes, edges, nodeCategories, showToast, setConnectSourceId]
@@ -386,38 +373,6 @@ export const Prj1GraphCanvas: React.FC = () => {
     };
   });
 
-  const justOpenedMenuRef = useRef(false);
-
-  // Dismiss menus on click outside or escape
-  useEffect(() => {
-    const handleDismiss = (e: MouseEvent) => {
-      // Only dismiss on left click outside; right clicks are handled by onContextMenu
-      if (e.button !== 0) return;
-      if (justOpenedMenuRef.current) {
-        justOpenedMenuRef.current = false;
-        return;
-      }
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('.context-menu-popover')) {
-        return;
-      }
-      setContextMenu(null);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setContextMenu(null);
-      }
-    };
-
-    window.addEventListener('click', handleDismiss);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('click', handleDismiss);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
   // Initialize Web Worker and GraphEngine on mount
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -429,7 +384,6 @@ export const Prj1GraphCanvas: React.FC = () => {
 
     const engine = new GraphEngine(canvasRef.current, {
       onSelectNode: (id) => {
-        setContextMenu(null);
         if (id) {
           callbacksRef.current.selectNode(id);
         } else {
@@ -438,7 +392,6 @@ export const Prj1GraphCanvas: React.FC = () => {
         }
       },
       onSelectEdge: (id) => {
-        setContextMenu(null);
         callbacksRef.current.selectEdge(id);
       },
       onHoverNode: (id) => {
@@ -452,20 +405,6 @@ export const Prj1GraphCanvas: React.FC = () => {
       },
       onConnectCancel: () => {
         callbacksRef.current.setConnectSourceId(null);
-        setContextMenu(null);
-      },
-      onNodeContextMenu: (nodeId, clientX, clientY) => {
-        if (nodeId) {
-          justOpenedMenuRef.current = true;
-          callbacksRef.current.selectNode(nodeId);
-          setContextMenu({
-            nodeId,
-            x: clientX,
-            y: clientY
-          });
-        } else {
-          setContextMenu(null);
-        }
       }
     });
 
@@ -597,92 +536,6 @@ export const Prj1GraphCanvas: React.FC = () => {
         className="w-full h-full block cursor-grab active:cursor-grabbing"
       />
 
-      {/* Node Right-Click Context Menu */}
-      {contextMenu && (() => {
-        const menuNode = nodes.find((n) => n.id === contextMenu.nodeId);
-        const cat = nodeCategories.find((c) => c.id === menuNode?.categoryId);
-        const nodeName = menuNode
-          ? getProperty(menuNode.properties, 'name') || menuNode.id
-          : 'Node';
-
-        return (
-          <div
-            style={{
-              left: Math.min(contextMenu.x, window.innerWidth - 220),
-              top: Math.min(contextMenu.y, window.innerHeight - 190)
-            }}
-            className="context-menu-popover fixed z-50 w-52 p-1.5 rounded-xl bg-[#0F172A]/95 backdrop-blur-xl border border-white/15 shadow-2xl text-xs space-y-1 animate-fade-in select-none"
-            onClick={(e) => e.stopPropagation()}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {/* Node Info Header */}
-            <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-white/10 text-slate-300">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: cat?.color || '#06b6d4' }}
-              />
-              <span className="font-semibold text-slate-200 truncate">{nodeName}</span>
-            </div>
-
-            {/* Primary Action: Create Link */}
-            <button
-              onClick={() => {
-                setConnectSourceId(contextMenu.nodeId);
-                setContextMenu(null);
-              }}
-              className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all font-medium group text-left cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Link2 className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
-                <span>Create Link</span>
-              </div>
-              <span className="text-[10px] text-cyan-400/80 font-mono">Connect</span>
-            </button>
-
-            {/* Center / Focus Node */}
-            <button
-              onClick={() => {
-                engineRef.current?.centerOnNode(contextMenu.nodeId);
-                setContextMenu(null);
-              }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-slate-300 transition-colors text-left cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5 text-slate-400" />
-              <span>Center in View</span>
-            </button>
-
-            {/* Remove Image Option if node has an image */}
-            {Boolean(menuNode?.properties && (menuNode.properties.imageUrl || menuNode.properties.image)) && (
-              <button
-                onClick={() => {
-                  const updatedProps = { ...menuNode?.properties };
-                  delete updatedProps.imageUrl;
-                  delete updatedProps.image;
-                  updateNodeProperties(contextMenu.nodeId, updatedProps);
-                  setContextMenu(null);
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-amber-500/15 text-amber-300 transition-colors text-left cursor-pointer"
-              >
-                <ImageOff className="w-3.5 h-3.5 text-amber-400" />
-                <span>Remove Image</span>
-              </button>
-            )}
-
-            {/* Delete Node */}
-            <button
-              onClick={() => {
-                removeNode(contextMenu.nodeId);
-                setContextMenu(null);
-              }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-rose-500/15 text-rose-400 transition-colors text-left cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Node</span>
-            </button>
-          </div>
-        );
-      })()}
-
       {/* Connect mode banner */}
       {connectSourceId && (() => {
         const srcNode = nodes.find((n) => n.id === connectSourceId);
@@ -691,7 +544,7 @@ export const Prj1GraphCanvas: React.FC = () => {
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-4 py-2 rounded-full bg-[#0B1220]/95 border border-cyan-500/40 backdrop-blur-md text-cyan-200 text-xs shadow-2xl animate-fade-in">
             <Link2 className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
             <span>
-              Linking from <strong className="text-white font-semibold">{srcName}</strong>: Left-click on target node to connect (ESC to cancel)
+              Linking from <strong className="text-white font-semibold">{srcName}</strong>: Click (left or right) on target node to connect (Click empty space or ESC to cancel)
             </span>
             <button
               onClick={() => setConnectSourceId(null)}

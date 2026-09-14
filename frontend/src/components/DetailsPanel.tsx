@@ -629,13 +629,7 @@ export const DetailsPanel: React.FC = () => {
   }, [selectedNodeId, selectedEdgeId, selectNode, selectEdge]);
 
   if (!selectedNode && !selectedEdge) {
-    return (
-      <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col justify-center items-center p-6 text-center select-none z-20">
-        <p className="text-xs text-slate-500 leading-relaxed max-w-[200px]">
-          Select a node or relationship to inspect and edit properties.
-        </p>
-      </aside>
-    );
+    return null;
   }
 
   if (selectedEdge) {
