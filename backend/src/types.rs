@@ -106,8 +106,7 @@ pub struct AttackSimulationResult {
     pub overall_severity: SeverityScore,
 }
 
-#[derive(Debug, Clone, Copy, strum::Display)]
-#[derive(thiserror::Error)]
+#[derive(Debug, Clone, Copy, strum::Display, thiserror::Error)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApiError {
     InvalidCategoryConnection,
