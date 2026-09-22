@@ -11,7 +11,7 @@ dev:
     ./backend/target/debug/backend &
 
     echo "Starting frontend..."
-    (cd frontend && npm run dev) &
+    (cd frontend && pnpm run dev) &
 
     sleep 2 && {{open}} http://localhost:5173
 
@@ -28,7 +28,7 @@ prod:
     ./backend/target/release/backend &
 
     echo "Building frontend..."
-    (cd frontend && npm run build)
+    (cd frontend && pnpm run build)
 
     echo "Opening frontend..."
     (cd frontend && npx serve dist -l 5173) &

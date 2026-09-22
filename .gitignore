@@ -13,3 +13,4 @@ API_DOCS.md
 *.log
 .DS_Store
 db.json
+.direnv/
