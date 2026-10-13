@@ -607,6 +607,15 @@ pub async fn simulate_attack_handler(
         return Err(ApiError::NodeNotFound);
     }
 
+    if attack::ScenarioKind::from_scenario(&request.scenario) == attack::ScenarioKind::ChainDrop
+        && !nodes.iter().any(|n| {
+            n.id == request.start_node_id
+                && matches!(n.category_id.as_str(), "dependencies" | "identity_people")
+        })
+    {
+        return Err(ApiError::InvalidStartNode);
+    }
+
     let edges: Vec<Edge> = db
         .edges
         .iter()

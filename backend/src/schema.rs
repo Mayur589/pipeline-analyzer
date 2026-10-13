@@ -104,6 +104,28 @@ fn dependencies_category() -> NodeCategory {
                 options: None,
                 default_value: Some(PropertyField::Boolean(true)),
             },
+            PropertyFieldDef {
+                key: String::from("lifecycleScripts"),
+                ty: PropertyField::String(String::from("select")),
+                options: Some(vec![String::from("Enabled"), String::from("Disabled")]),
+                default_value: Some(PropertyField::String(String::from("Enabled"))),
+            },
+            PropertyFieldDef {
+                key: String::from("releaseCooldown"),
+                ty: PropertyField::String(String::from("select")),
+                options: Some(vec![
+                    String::from("None"),
+                    String::from("1 day"),
+                    String::from("7 days"),
+                ]),
+                default_value: Some(PropertyField::String(String::from("None"))),
+            },
+            PropertyFieldDef {
+                key: String::from("lockfilePinned"),
+                ty: PropertyField::String(String::from("boolean")),
+                options: None,
+                default_value: Some(PropertyField::Boolean(false)),
+            },
         ],
     }
 }
@@ -179,6 +201,12 @@ fn cicd_pipeline_category() -> NodeCategory {
                 options: None,
                 default_value: Some(PropertyField::Boolean(true)),
             },
+            PropertyFieldDef {
+                key: String::from("trustedPublishing"),
+                ty: PropertyField::String(String::from("boolean")),
+                options: None,
+                default_value: Some(PropertyField::Boolean(false)),
+            },
         ],
     }
 }
@@ -212,6 +240,16 @@ fn secrets_credentials_category() -> NodeCategory {
                 ty: PropertyField::String(String::from("boolean")),
                 options: None,
                 default_value: Some(PropertyField::Boolean(true)),
+            },
+            PropertyFieldDef {
+                key: String::from("tokenScope"),
+                ty: PropertyField::String(String::from("select")),
+                options: Some(vec![
+                    String::from("Publish + 2FA Bypass"),
+                    String::from("Granular"),
+                    String::from("Read-only"),
+                ]),
+                default_value: Some(PropertyField::String(String::from("Publish + 2FA Bypass"))),
             },
         ],
     }
@@ -377,7 +415,7 @@ pub fn all_node_categories() -> Vec<NodeCategory> {
     ]
 }
 
-/// Returns all 21 supported relationship types.
+/// Returns all 22 supported relationship types.
 #[must_use]
 pub fn all_relationships() -> Vec<String> {
     const RELATIONSHIPS: &[&str] = &[
@@ -402,6 +440,7 @@ pub fn all_relationships() -> Vec<String> {
         "approves",
         "operates",
         "accesses",
+        "republishes",
     ];
 
     RELATIONSHIPS.iter().map(|&s| String::from(s)).collect()
@@ -423,8 +462,11 @@ pub fn valid_relationships(source_category: &str, target_category: &str) -> Opti
         ("source_control", "build_environment") => &["provides_source"],
         ("source_control", "cicd_pipeline") => &["triggers"],
         ("dependencies", "build_environment") => &["consumed_by"],
+        ("dependencies", "identity_people") => &["consumed_by"],
+        ("identity_people", "dependencies") => &["maintains"],
         ("cicd_pipeline", "build_environment") => &["executes"],
         ("cicd_pipeline", "artifact_storage") => &["publishes"],
+        ("cicd_pipeline", "dependencies") => &["republishes"],
         ("cicd_pipeline", "distribution" | "runtime_environment") => &["deploys"],
         ("build_environment", "artifact_storage") => &["produces"],
         ("build_environment", "monitoring_response") | ("monitoring_response", "cicd_pipeline") => {

@@ -73,7 +73,7 @@ pub enum StepOutcome {
     Detected,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct AttackStep {
     pub edge_id: String,
@@ -83,6 +83,10 @@ pub struct AttackStep {
     pub outcome: StepOutcome,
     pub reason: String,
     pub controls_triggered: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverse: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +108,10 @@ pub struct AttackSimulationResult {
     pub blocked_node_ids: Vec<String>,
     pub detected_at_step: Option<usize>,
     pub overall_severity: SeverityScore,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worm_generations: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exposed_secret_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, strum::Display, thiserror::Error)]
@@ -116,6 +124,7 @@ pub enum ApiError {
     EdgeNotFound,
     ProjectNotFound,
     EmptyGraph, // new: nothing to simulate against
+    InvalidStartNode,
 }
 
 impl ApiError {
@@ -125,9 +134,10 @@ impl ApiError {
             Self::NodeNotFound | Self::EdgeNotFound | Self::ProjectNotFound => {
                 StatusCode::NOT_FOUND
             }
-            Self::InvalidCategoryConnection | Self::InvalidRelationship | Self::EmptyGraph => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::InvalidCategoryConnection
+            | Self::InvalidRelationship
+            | Self::EmptyGraph
+            | Self::InvalidStartNode => StatusCode::BAD_REQUEST,
         }
     }
 }

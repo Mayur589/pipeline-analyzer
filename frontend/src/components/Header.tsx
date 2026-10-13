@@ -37,7 +37,8 @@ export const Header: React.FC = () => {
     isLoading,
     nodeCategories,
     appMode,
-    setAppMode
+    setAppMode,
+    setSelectedScenario
   } = useGraphStore();
 
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
@@ -156,73 +157,97 @@ export const Header: React.FC = () => {
     setIsPopulatingSample(true);
 
     try {
-      // Clear existing project items first
-      const edgeCopy = [...edges];
-      for (const e of edgeCopy) {
-        await removeEdge(e.id);
-      }
-      const nodeCopy = [...nodes];
-      for (const n of nodeCopy) {
-        await removeNode(n.id);
-      }
+      // Give the example its own named project, preserving the active graph.
+      await createNewProject('ChainDrop npm Worm (example)');
       clearCanvas();
+      setSelectedScenario('ChainDrop');
 
-      // Dynamically generate a node for each category retrieved from backend
-      const createdNodes: Record<string, any> = {};
+      const nodeSpecs = [
+        { key: 'maintainer', categoryId: 'identity_people', name: 'Package Maintainer', values: { mfaEnabled: false } },
+        { key: 'dev', categoryId: 'identity_people', name: 'Developer Workstation', values: { mfaEnabled: true } },
+        { key: 'deps', categoryId: 'dependencies', name: 'npm: cache-utils', values: { lifecycleScripts: 'Enabled', releaseCooldown: 'None', lockfilePinned: false, vulnerabilityScanning: true } },
+        { key: 'deps2', categoryId: 'dependencies', name: 'npm: downstream-app', values: { lifecycleScripts: 'Enabled', releaseCooldown: 'None', lockfilePinned: false, vulnerabilityScanning: true } },
+        { key: 'repo', categoryId: 'source_control', name: 'app-repo', values: { branchProtection: true } },
+        { key: 'build', categoryId: 'build_environment', name: 'Shared CI Runner', values: { isolationLevel: 'Shared Node' } },
+        { key: 'ci', categoryId: 'cicd_pipeline', name: 'Release Workflow', values: { trustedPublishing: true, approvalRequired: false } },
+        { key: 'token', categoryId: 'secrets_credentials', name: 'npm Publish Token', values: { tokenScope: 'Publish + 2FA Bypass', autoRevoke: false, vaultType: 'HashiCorp Vault' } },
+        { key: 'registry', categoryId: 'artifact_storage', name: 'Internal Registry', values: { signatureVerification: true, immutableTags: true } },
+        { key: 'dist', categoryId: 'distribution', name: 'CDN', values: { integrityCheck: true } },
+        { key: 'prod', categoryId: 'runtime_environment', name: 'Production Cluster', values: { enforceZeroTrust: false } },
+        { key: 'siem', categoryId: 'monitoring_response', name: 'SIEM', values: { alertThreshold: 'Strict Policy Violations' } }
+      ] as const;
       const positions: Record<string, { x: number; y: number }> = {
-        identity_people: { x: 100, y: 220 },
-        source_control: { x: 340, y: 140 },
-        dependencies: { x: 340, y: 380 },
-        secrets_credentials: { x: 580, y: 60 },
-        cicd_pipeline: { x: 580, y: 220 },
-        build_environment: { x: 820, y: 220 },
-        artifact_storage: { x: 1060, y: 220 },
-        runtime_environment: { x: 1300, y: 220 },
-        monitoring_response: { x: 700, y: 440 }
+        maintainer: { x: 80, y: 100 },
+        dev: { x: 80, y: 320 },
+        repo: { x: 300, y: 100 },
+        deps: { x: 520, y: 100 },
+        deps2: { x: 520, y: 300 },
+        token: { x: 760, y: 40 },
+        build: { x: 760, y: 210 },
+        ci: { x: 760, y: 410 },
+        registry: { x: 1010, y: 220 },
+        dist: { x: 1240, y: 100 },
+        prod: { x: 1460, y: 220 },
+        siem: { x: 1120, y: 460 }
       };
+      const createdNodes: Record<string, { id: string; categoryId: string }> = {};
 
-      for (let i = 0; i < nodeCategories.length; i++) {
-        const cat = nodeCategories[i];
-        const defaultProps = createDefaultProperties(cat);
-        const pos = positions[cat.id] || { x: 150 + (i % 4) * 250, y: 100 + Math.floor(i / 4) * 180 };
-        const node = await addNode({
-          categoryId: cat.id,
-          properties: defaultProps,
-          position: pos
+      for (const spec of nodeSpecs) {
+        const category = nodeCategories.find((candidate) => candidate.id === spec.categoryId);
+        if (!category) throw new Error(`Backend has no node category ${spec.categoryId}`);
+        const properties = {
+          ...createDefaultProperties(category),
+          name: spec.name,
+          ...spec.values
+        };
+        const created = await addNode({
+          categoryId: spec.categoryId,
+          properties,
+          position: positions[spec.key]
         });
-        createdNodes[cat.id] = node;
+        createdNodes[spec.key] = created;
       }
 
-      // Connect candidate pairs strictly validated by the backend
-      const candidatePairs: [string, string][] = [
-        ['identity_people', 'source_control'],
-        ['source_control', 'cicd_pipeline'],
-        ['source_control', 'build_environment'],
-        ['secrets_credentials', 'cicd_pipeline'],
-        ['cicd_pipeline', 'build_environment'],
-        ['dependencies', 'build_environment'],
-        ['build_environment', 'artifact_storage'],
-        ['artifact_storage', 'runtime_environment'],
-        ['runtime_environment', 'monitoring_response'],
-        ['monitoring_response', 'identity_people']
+      // Queue the build consumer before the workstation consumer so its reverse
+      // credential harvest is recorded before dev accesses the same token.
+      const edgeSpecs: [string, string, string][] = [
+        ['maintainer', 'maintains', 'deps'],
+        ['maintainer', 'operates', 'ci'],
+        ['repo', 'references', 'deps'],
+        ['repo', 'triggers', 'ci'],
+        ['repo', 'provides_source', 'build'],
+        ['deps', 'consumed_by', 'build'],
+        ['deps', 'consumed_by', 'dev'],
+        ['deps2', 'consumed_by', 'dev'],
+        ['dev', 'accesses', 'token'],
+        ['token', 'authenticates', 'build'],
+        ['token', 'authenticates', 'ci'],
+        ['ci', 'executes', 'build'],
+        ['ci', 'publishes', 'registry'],
+        ['ci', 'republishes', 'deps'],
+        ['ci', 'republishes', 'deps2'],
+        ['ci', 'deploys', 'prod'],
+        ['build', 'produces', 'registry'],
+        ['build', 'logs_to', 'siem'],
+        ['registry', 'provides', 'dist'],
+        ['registry', 'provides', 'prod'],
+        ['dist', 'delivers', 'prod'],
+        ['prod', 'monitored_by', 'siem'],
+        ['siem', 'alerts', 'dev']
       ];
 
-      for (const [srcCat, tgtCat] of candidatePairs) {
-        const srcNode = createdNodes[srcCat];
-        const tgtNode = createdNodes[tgtCat];
-        if (srcNode && tgtNode) {
-          const val = await validateRelationship(srcCat, tgtCat);
-          if (val.valid && val.allowedRelationshipIds.length > 0) {
-            await addEdge({
-              sourceNodeId: srcNode.id,
-              targetNodeId: tgtNode.id,
-              relationshipId: val.allowedRelationshipIds[0]
-            });
-          }
+      for (const [sourceKey, relationshipId, targetKey] of edgeSpecs) {
+        const source = createdNodes[sourceKey];
+        const target = createdNodes[targetKey];
+        if (!source || !target) throw new Error(`Missing example node for ${sourceKey} -> ${targetKey}`);
+        const validation = await validateRelationship(source.categoryId, target.categoryId);
+        if (!validation.valid || !validation.allowedRelationshipIds.includes(relationshipId)) {
+          throw new Error(`Backend rejected ${sourceKey} -${relationshipId}-> ${targetKey}`);
         }
+        await addEdge({ sourceNodeId: source.id, targetNodeId: target.id, relationshipId });
       }
     } catch (e) {
-      console.error('Failed to load sample pipeline:', e);
+      console.error('Failed to load ChainDrop example:', e);
     } finally {
       setIsPopulatingSample(false);
     }
@@ -497,7 +522,7 @@ export const Header: React.FC = () => {
           onClick={handleLoadSamplePipeline}
           disabled={isPopulatingSample || !projectId || appMode === 'attack'}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
-          title={appMode === 'attack' ? 'Load Sample disabled in Attack Mode' : 'Populate complete supply chain sample into backend'}
+          title={appMode === 'attack' ? 'Load Sample disabled in Attack Mode' : 'Load ChainDrop npm worm example'}
         >
           {isPopulatingSample ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />

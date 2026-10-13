@@ -224,6 +224,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               <option value="registry_credential_leak">
                 Registry Credential Leak
               </option>
+              <option value="ChainDrop">ChainDrop npm Worm</option>
             </select>
           </div>
 
