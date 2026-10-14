@@ -19,6 +19,7 @@ use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
 use backend::get_relationships;
+use backend::get_scenarios;
 use backend::simulate_attack_handler;
 use backend::validate_relationship;
 use tower_http::cors::Any;
@@ -39,6 +40,7 @@ async fn main() {
     let base_routes = Router::new()
         .route("/node-types", get(get_node_categories))
         .route("/relationships", get(get_relationships))
+        .route("/scenarios", get(get_scenarios))
         .route("/relationships/validate", get(validate_relationship));
 
     #[rustfmt::skip]

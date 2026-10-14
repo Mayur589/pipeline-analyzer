@@ -1,8 +1,8 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use crate::types::{
-    AttackSimulationResult, AttackStep, Graph, Node, NodeProperties, PropertyField, SeverityScore,
-    StepOutcome,
+    AttackSimulationResult, AttackStep, Graph, KeyControl, Node, NodeProperties, PropertyField,
+    ScenarioInfo, SeverityScore, StepOutcome,
 };
 
 fn get_bool(props: &NodeProperties, key: &str) -> bool {
@@ -24,6 +24,11 @@ pub enum ScenarioKind {
 }
 
 impl ScenarioKind {
+    #[must_use]
+    pub fn all() -> [Self; 3] {
+        [Self::ChainDrop, Self::BuildTamper, Self::MaintainerTakeover]
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         let normalized = s
             .chars()
@@ -53,6 +58,55 @@ impl ScenarioKind {
             Self::ChainDrop => &["dependencies", "identity_people"],
             Self::MaintainerTakeover => &["identity_people"],
             Self::BuildTamper => &["build_environment"],
+        }
+    }
+
+    #[must_use]
+    pub fn info(self) -> ScenarioInfo {
+        let (name, description, default_start_category, key_controls) = match self {
+            Self::ChainDrop => (
+                "ChainDrop npm Worm",
+                "A poisoned npm release runs on install, steals CI credentials, and republishes itself downstream.",
+                "dependencies",
+                vec![
+                    ("dependencies", "releaseCooldown"),
+                    ("dependencies", "lockfilePinned"),
+                    ("dependencies", "lifecycleScripts"),
+                ],
+            ),
+            Self::BuildTamper => (
+                "Build Tamper (SolarWinds-style)",
+                "A backdoor is injected during compilation; the poisoned build is signed and published, so every downstream check passes.",
+                "build_environment",
+                vec![("build_environment", "reproducibleBuilds")],
+            ),
+            Self::MaintainerTakeover => (
+                "Maintainer Takeover (xz-style)",
+                "A trusted maintainer slips a payload into the release process that reviewers never saw in the repository.",
+                "identity_people",
+                vec![
+                    ("cicd_pipeline", "releaseSource"),
+                    ("source_control", "requiredReviewers"),
+                ],
+            ),
+        };
+        ScenarioInfo {
+            id: self.id().into(),
+            name: name.into(),
+            description: description.into(),
+            valid_start_categories: self
+                .valid_start_categories()
+                .iter()
+                .map(|category| (*category).into())
+                .collect(),
+            default_start_category: default_start_category.into(),
+            key_controls: key_controls
+                .into_iter()
+                .map(|(category_id, property_key)| KeyControl {
+                    category_id: category_id.into(),
+                    property_key: property_key.into(),
+                })
+                .collect(),
         }
     }
 

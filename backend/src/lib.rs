@@ -25,6 +25,7 @@ use crate::types::Node;
 use crate::types::NodeCategory;
 use crate::types::NodeProperties;
 use crate::types::Project;
+use crate::types::ScenarioInfo;
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
@@ -94,6 +95,21 @@ pub async fn get_node_categories(State(_state): State<AppState>) -> ApiResult<Ve
 pub async fn get_relationships(State(_state): State<AppState>) -> ApiResult<Vec<String>> {
     tokio::task::yield_now().await;
     Ok(Json(schema::all_relationships()))
+}
+
+/// Returns metadata for the supported attack scenarios.
+///
+/// # Errors
+///
+/// This function never returns an error.
+pub async fn get_scenarios(State(_state): State<AppState>) -> ApiResult<Vec<ScenarioInfo>> {
+    tokio::task::yield_now().await;
+    Ok(Json(
+        attack::ScenarioKind::all()
+            .into_iter()
+            .map(attack::ScenarioKind::info)
+            .collect(),
+    ))
 }
 
 /// Returns all projects currently stored in the database.
@@ -624,12 +640,8 @@ pub async fn simulate_attack_handler(
     };
 
     let attack_id = generate_id("attack");
-    let result = attack::simulate_attack(
-        &graph,
-        attack_id,
-        &request.start_node_id,
-        &request.scenario,
-    )?;
+    let result =
+        attack::simulate_attack(&graph, attack_id, &request.start_node_id, &request.scenario)?;
 
     Ok(Json(result))
 }

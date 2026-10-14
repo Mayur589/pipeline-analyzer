@@ -114,6 +114,24 @@ pub struct AttackSimulationResult {
     pub exposed_secret_ids: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ScenarioInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub valid_start_categories: Vec<String>,
+    pub default_start_category: String,
+    pub key_controls: Vec<KeyControl>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct KeyControl {
+    pub category_id: String,
+    pub property_key: String,
+}
+
 #[derive(Debug, Clone, Copy, strum::Display, thiserror::Error)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum ApiError {

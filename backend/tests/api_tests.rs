@@ -31,6 +31,7 @@ use backend::get_graph;
 use backend::get_node_categories;
 use backend::get_projects;
 use backend::get_relationships;
+use backend::get_scenarios;
 use backend::simulate_attack_handler;
 use backend::types::ApiError;
 use backend::types::Edge;
@@ -129,6 +130,47 @@ async fn test_three_scenario_property_definitions() {
         release.default_value,
         Some(PropertyField::String("Uploaded tarball".into()))
     );
+}
+
+#[tokio::test]
+async fn test_scenarios_endpoint_metadata() {
+    let state = setup_test_state().await;
+    let Json(scenarios) = get_scenarios(State(state.clone()))
+        .await
+        .expect("scenarios should return");
+    assert_eq!(scenarios.len(), 3);
+    assert_eq!(
+        scenarios
+            .iter()
+            .map(|scenario| scenario.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["ChainDrop", "BuildTamper", "MaintainerTakeover"]
+    );
+    let Json(categories) = get_node_categories(State(state))
+        .await
+        .expect("node categories should return");
+    for scenario in scenarios {
+        for category_id in scenario
+            .valid_start_categories
+            .iter()
+            .chain(core::iter::once(&scenario.default_start_category))
+        {
+            assert!(
+                categories
+                    .iter()
+                    .any(|category| category.id == *category_id)
+            );
+        }
+        for control in scenario.key_controls {
+            assert!(categories.iter().any(|category| {
+                category.id == control.category_id
+                    && category
+                        .field_defs
+                        .iter()
+                        .any(|field| field.key == control.property_key)
+            }));
+        }
+    }
 }
 
 #[tokio::test]
