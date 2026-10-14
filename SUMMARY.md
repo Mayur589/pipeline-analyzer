@@ -75,7 +75,7 @@ Invalid scenario and invalid start category errors return HTTP 400. Unknown star
 
 ## Verified status
 
-- Backend API integration suite: 18 tests pass, with no ignored tests.
+- Backend API integration suite: 19 tests pass, with no ignored tests.
 - Backend build succeeds. Clippy retains the T0 baseline warning set; no new warnings are introduced.
 - Frontend production build succeeds. Lint reports the single existing immutability warning in `Prj1GraphCanvas.tsx`.
 - The ChainDrop golden fixture remains unchanged after adding the 24th edge and the new scenarios.

@@ -872,6 +872,10 @@ async fn run_three_scenario_example_cases(
     let case_c = simulate_example_case(&state, &project_id, &ids["build"], "BuildTamper").await;
     assert_eq!(case_c.steps.len(), 5);
     assert_eq!(case_c.steps[4].outcome, StepOutcome::Detected);
+    assert!(case_c.steps[..4]
+        .iter()
+        .all(|step| step.outcome == StepOutcome::Compromised));
+    assert!(blocked_keys(&case_c).is_empty());
     assert_eq!(case_c.detected_at_step, Some(4));
     assert_eq!(
         compromised_keys(&case_c),
@@ -944,6 +948,10 @@ async fn run_three_scenario_example_cases(
     .await;
     assert_eq!(case_e.steps.len(), 7);
     assert_eq!(case_e.steps[0].outcome, StepOutcome::Slowed);
+    assert!(case_e.steps[1..]
+        .iter()
+        .all(|step| step.outcome == StepOutcome::Compromised));
+    assert!(blocked_keys(&case_e).is_empty());
     assert_eq!(compromised_keys(&case_e), compromised_keys(&case_d));
     assert_eq!(case_e.detected_at_step, None);
     assert!((case_e.overall_severity.score - 5.83).abs() < 0.01);
