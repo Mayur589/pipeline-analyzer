@@ -44,6 +44,7 @@ interface GraphStoreState {
   isPlayingSimulation: boolean;
   simulationPlaybackSpeed: number;
   selectedScenario: string;
+  focusNodeRequest: { nodeId: string; requestId: number } | null;
 
   // UI state
   isLoading: boolean;
@@ -55,6 +56,7 @@ interface GraphStoreState {
   runAttackSimulation: (startNodeId: string, scenario?: string) => Promise<AttackSimulationResult | null>;
   clearAttackSimulation: () => void;
   setActiveStepIndex: (index: number) => void;
+  requestNodeFocus: (nodeId: string) => void;
   setIsPlayingSimulation: (isPlaying: boolean) => void;
   nextSimulationStep: () => void;
   prevSimulationStep: () => void;
@@ -105,6 +107,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   isPlayingSimulation: false,
   simulationPlaybackSpeed: 800,
   selectedScenario: 'ChainDrop',
+  focusNodeRequest: null,
   isLoading: false,
   error: null,
 
@@ -112,7 +115,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     if (mode === 'attack') {
       set({ appMode: mode, connectSourceId: null });
     } else {
-      set({ appMode: mode, isPlayingSimulation: false });
+      set({
+        appMode: mode,
+        attackResult: null,
+        activeStepIndex: -1,
+        isPlayingSimulation: false,
+        attackError: null
+      });
     }
   },
 
@@ -150,10 +159,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
           set({ projectId: currentId });
           await get().loadGraph(currentId);
         } else {
-          // If no projects exist on backend, create the initial default project
-          const defaultProj = await api.createProject('Default Security Pipeline');
-          set({ projects: [defaultProj], projectId: defaultProj.id });
-          await get().loadGraph(defaultProj.id);
+          // No projects exist yet; leave the workspace empty until the user
+          // creates one or loads the sample.
+          set({ projectId: '' });
         }
       }
 
@@ -235,18 +243,17 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
           });
           await get().loadGraph(nextProject.id);
         } else {
-          // If no projects remain, create a new default project
-          const defaultProj = await api.createProject('Default Security Pipeline');
+          // No projects remain; clear the active workspace instead of
+          // recreating a default project.
           set({
-            projects: [defaultProj],
-            projectId: defaultProj.id,
+            projects: [],
+            projectId: '',
             nodes: [],
             edges: [],
             selectedNodeId: null,
             selectedEdgeId: null,
             connectSourceId: null
           });
-          await get().loadGraph(defaultProj.id);
         }
       } else {
         set({ projects: remainingProjects });
@@ -546,7 +553,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       isSimulatingAttack: true,
       attackError: null,
-      isPlayingSimulation: false
+      isPlayingSimulation: false,
+      selectedNodeId: null,
+      selectedEdgeId: null
     });
 
     try {
@@ -591,6 +600,15 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const maxIndex = attackResult.steps.length;
     const clamped = Math.max(-1, Math.min(index, maxIndex));
     set({ activeStepIndex: clamped });
+  },
+
+  requestNodeFocus: (nodeId: string) => {
+    set((state) => ({
+      focusNodeRequest: {
+        nodeId,
+        requestId: (state.focusNodeRequest?.requestId ?? 0) + 1
+      }
+    }));
   },
 
   setIsPlayingSimulation: (isPlaying: boolean) => {

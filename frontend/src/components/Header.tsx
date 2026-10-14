@@ -129,7 +129,7 @@ export const Header: React.FC = () => {
       encodeURIComponent(JSON.stringify({ projectId, nodes, edges }, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `pipelineguard-${projectId || 'graph'}.json`);
+    downloadAnchor.setAttribute('download', `pipeline-analyzer-${projectId || 'graph'}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -264,10 +264,7 @@ export const Header: React.FC = () => {
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-              PipelineGuard
-              <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                Live
-              </span>
+              Pipeline Analyzer
             </h1>
           </div>
         </div>
@@ -474,11 +471,6 @@ export const Header: React.FC = () => {
           )}
         </div>
 
-        {/* Backend Connected Pill */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-mono">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>127.0.0.1:3000</span>
-        </div>
       </div>
 
       {/* Center: Mode Toggle (Edit Mode vs Attack Mode) */}

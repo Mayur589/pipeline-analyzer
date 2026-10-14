@@ -216,7 +216,6 @@ export type ColorByOption = 'type' | 'tag' | 'degree' | 'custom';
 
 export interface DisplayConfig {
   showLabels: boolean;
-  showEdgeLabels?: boolean;
   labelSize: number;
   linkThickness: number;
   curvedEdges: boolean;

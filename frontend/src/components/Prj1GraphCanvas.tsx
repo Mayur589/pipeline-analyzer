@@ -31,8 +31,7 @@ import {
   RotateCcw,
   Compass,
   Navigation,
-  Layers,
-  Tag
+  Layers
 } from 'lucide-react';
 
 const DEFAULT_PHYSICS: PhysicsConfig = {
@@ -49,7 +48,6 @@ const DEFAULT_PHYSICS: PhysicsConfig = {
 
 const DEFAULT_DISPLAY: DisplayConfig = {
   showLabels: true,
-  showEdgeLabels: false,
   labelSize: 11.5,
   linkThickness: 1.8,
   curvedEdges: false,
@@ -97,12 +95,13 @@ export const Prj1GraphCanvas: React.FC = () => {
     appMode,
     attackResult,
     attackError,
+    focusNodeRequest,
     clearAttackSimulation
   } = useGraphStore();
 
   const [hoveredEdgeInfo, setHoveredEdgeInfo] = useState<{ id: string; x: number; y: number } | null>(null);
 
-  // Convert PipelineGuard entities to GraphNode and GraphEdge with degree-based sizing
+  // Convert Pipeline Analyzer entities to GraphNode and GraphEdge with degree-based sizing
   const { graphNodes, graphEdges } = useMemo(() => {
     // Calculate connection count (degree) for each node
     const degreeMap = new Map<string, number>();
@@ -479,6 +478,20 @@ export const Prj1GraphCanvas: React.FC = () => {
       engineRef.current.setAttackSimulation(appMode === 'attack' ? attackResult : null);
     }
   }, [appMode, attackResult]);
+
+  useEffect(() => {
+    const request = focusNodeRequest;
+    const canvas = canvasRef.current;
+    if (!request || appMode !== 'attack' || !canvas || !nodes.some((node) => node.id === request.nodeId)) return;
+
+    engineRef.current?.centerOnNode(request.nodeId);
+    const bounds = canvas.getBoundingClientRect();
+    setHoveredNodeInfo({
+      id: request.nodeId,
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2
+    });
+  }, [focusNodeRequest, appMode, nodes]);
 
   // Synchronize Display and Search Configs
   useEffect(() => {
@@ -945,18 +958,6 @@ export const Prj1GraphCanvas: React.FC = () => {
           <Layers className="w-3.5 h-3.5" />
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setDisplayConfig(prev => ({ ...prev, showEdgeLabels: !prev.showEdgeLabels }));
-          }}
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            displayConfig.showEdgeLabels ? 'text-cyan-400 bg-cyan-500/15' : 'hover:bg-white/10 hover:text-white'
-          }`}
-          title={displayConfig.showEdgeLabels ? 'Always Show Edge Labels: ON' : 'Hover-Only Edge Labels (Clean mode): ON'}
-        >
-          <Tag className="w-3.5 h-3.5" />
-        </button>
       </div>
     </div>
   );

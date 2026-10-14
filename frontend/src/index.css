@@ -4,6 +4,9 @@
 
 :root {
   color-scheme: dark;
+  /* Slightly larger UI type. The graph is drawn on a canvas in fixed pixels,
+     so it is unaffected by this rem-based scaling. */
+  font-size: 17px;
 }
 
 body {

@@ -798,7 +798,9 @@ export class GraphEngine {
     this.drawBackgroundGrid(width, height);
 
     // Active Neighborhood calculation
-    const activeFocusId = this.hoveredNodeId || this.selectedNodeId;
+    const activeFocusId = this.appMode === 'attack'
+      ? this.selectedNodeId
+      : this.hoveredNodeId || this.selectedNodeId;
     const activeNeighbors = new Set<string>();
     if (activeFocusId) {
       activeNeighbors.add(activeFocusId);
@@ -1306,22 +1308,9 @@ export class GraphEngine {
       this.ctx.fill();
     }
 
-    // Edge Relationship Label Pill:
-    // Appears when:
-    // 1. Zoomed in close (camera.zoom >= 1.35)
-    // 2. The edge itself is hovered or selected
-    // 3. Either connected endpoint node is hovered or selected
-    // 4. showEdgeLabels is explicitly toggled on
-    const activeFocusId = this.hoveredNodeId || this.selectedNodeId;
-    const isConnectedToFocus = activeFocusId ? (src.id === activeFocusId || tgt.id === activeFocusId) : false;
-    const isDeepZoomed = this.camera.zoom >= 1.35;
-    const shouldShowLabel =
-      isSelected ||
-      isHovered ||
-      isConnectedToFocus ||
-      (this.displayConfig.showLabels && isDeepZoomed) ||
-      Boolean(this.displayConfig.showEdgeLabels);
-    const displayLabel = isSimulated && simStep && (isSelected || isHovered)
+    // Edge relationship labels appear only while the edge itself is hovered.
+    const shouldShowLabel = isHovered;
+    const displayLabel = isSimulated && simStep && isHovered
       ? `${edge.label || ''} [${simStep.outcome}]`
       : edge.label;
 

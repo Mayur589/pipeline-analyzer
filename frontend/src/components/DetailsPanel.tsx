@@ -231,7 +231,7 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
             )}
           </div>
 
-          {!isValidScenarioStart && selectedScenarioInfo && (
+          {selectedScenarioInfo && (
             <p className="text-[10px] text-amber-300">
               Start from: {selectedScenarioInfo.validStartCategories
                 .map((categoryId) => nodeCategories.find((item) => item.id === categoryId)?.category || formatRelationshipLabel(categoryId))
@@ -832,7 +832,8 @@ export const DetailsPanel: React.FC = () => {
     runAttackSimulation,
     isSimulatingAttack,
     activeStepIndex,
-    setActiveStepIndex
+    setActiveStepIndex,
+    requestNodeFocus
   } = useGraphStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
@@ -986,7 +987,10 @@ export const DetailsPanel: React.FC = () => {
               return (
                 <div
                   key={step.edgeId + idx}
-                  onClick={() => setActiveStepIndex(idx)}
+                  onClick={() => {
+                    setActiveStepIndex(idx);
+                    requestNodeFocus(step.targetNodeId);
+                  }}
                   className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
                     isCurrent
                       ? 'bg-white/10 border-cyan-500/60 shadow-md'

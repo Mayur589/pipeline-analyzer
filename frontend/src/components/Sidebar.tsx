@@ -4,7 +4,7 @@ import { Layers, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { nodeCategories, nodes, appMode } = useGraphStore();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>, categoryId: string) => {
     if (appMode === 'attack') {
@@ -16,6 +16,12 @@ export const Sidebar: React.FC = () => {
   };
 
   const isEdit = appMode === 'edit';
+
+  // The categories palette is edit-only. Hide it entirely in Attack Mode so
+  // the attack graph gets the full workspace.
+  if (appMode === 'attack') {
+    return null;
+  }
 
   if (isCollapsed) {
     return (

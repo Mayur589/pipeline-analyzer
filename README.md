@@ -2,6 +2,11 @@
 
 Pipeline Analyzer models software delivery graphs and simulates three attack paths on one shared sample pipeline.
 
+## Project documentation
+
+- [INTRO.md](INTRO.md) explains the project, simulation workflow, methodology, scenarios, and severity calculation.
+- [ONBOARD.md](ONBOARD.md) covers development setup, repository structure, API contracts, and implementation guidance. Read INTRO.md first.
+
 ## Demo script
 
 1. Select **Load Sample**, then run **ChainDrop** from `npm: cache-utils`. The worm fans out through the pipeline. Set `releaseCooldown` to `7 days` and `lockfilePinned` to `true` on that dependency to block it.
