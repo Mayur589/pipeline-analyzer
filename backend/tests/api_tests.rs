@@ -87,22 +87,37 @@ async fn test_three_scenario_property_definitions() {
         categories
             .iter()
             .find(|category| category.id == category_id)
-            .and_then(|category| category.field_defs.iter().find(|field| field.key == property_key))
+            .and_then(|category| {
+                category
+                    .field_defs
+                    .iter()
+                    .find(|field| field.key == property_key)
+            })
             .expect("scenario property should exist")
     };
 
     let reproducible = field("build_environment", "reproducibleBuilds");
     assert_eq!(reproducible.ty, PropertyField::String("boolean".into()));
-    assert_eq!(reproducible.default_value, Some(PropertyField::Boolean(false)));
+    assert_eq!(
+        reproducible.default_value,
+        Some(PropertyField::Boolean(false))
+    );
     assert_eq!(reproducible.options, None);
 
     let reviewers = field("source_control", "requiredReviewers");
     assert_eq!(reviewers.ty, PropertyField::String("select".into()));
     assert_eq!(
         reviewers.options,
-        Some(vec!["None".into(), "1 reviewer".into(), "2+ reviewers".into()])
+        Some(vec![
+            "None".into(),
+            "1 reviewer".into(),
+            "2+ reviewers".into()
+        ])
     );
-    assert_eq!(reviewers.default_value, Some(PropertyField::String("None".into())));
+    assert_eq!(
+        reviewers.default_value,
+        Some(PropertyField::String("None".into()))
+    );
 
     let release = field("cicd_pipeline", "releaseSource");
     assert_eq!(release.ty, PropertyField::String("select".into()));
@@ -469,8 +484,9 @@ async fn run_chaindrop_example_graph_regression() {
         }),
         "Severity": result.overall_severity,
     });
-    let expected: serde_json::Value = serde_json::from_str(include_str!("fixtures/chaindrop_golden.json"))
-        .expect("golden fixture is valid JSON");
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/chaindrop_golden.json"))
+            .expect("golden fixture is valid JSON");
     assert_eq!(golden, expected, "ChainDrop deps trace changed");
     let find_step = |source: &str, relationship: &str, target: &str| {
         result.steps.iter().find(|step| {
@@ -787,6 +803,88 @@ fn test_scenario_parsing_and_start_categories() {
 }
 
 #[test]
+fn test_build_tamper_paths_and_permissive_missing_control() {
+    let mut graph = Graph {
+        project_id: "p".into(),
+        nodes: vec![
+            chain_node("B", "build_environment", HashMap::new()),
+            chain_node(
+                "A",
+                "artifact_storage",
+                HashMap::from([("signatureVerification".into(), PropertyField::Boolean(true))]),
+            ),
+            chain_node("R", "runtime_environment", HashMap::new()),
+            chain_node(
+                "M",
+                "monitoring_response",
+                HashMap::from([(
+                    "alertThreshold".into(),
+                    PropertyField::String("Strict Policy Violations".into()),
+                )]),
+            ),
+        ],
+        edges: vec![
+            Edge {
+                id: "e1".into(),
+                source_node_id: "B".into(),
+                target_node_id: "A".into(),
+                relationship: "produces".into(),
+            },
+            Edge {
+                id: "e2".into(),
+                source_node_id: "A".into(),
+                target_node_id: "R".into(),
+                relationship: "provides".into(),
+            },
+            Edge {
+                id: "e3".into(),
+                source_node_id: "R".into(),
+                target_node_id: "M".into(),
+                relationship: "monitored_by".into(),
+            },
+        ],
+    };
+
+    let result =
+        simulate_attack(&graph, "a".into(), "B", "BuildTamper").expect("valid BuildTamper");
+    assert_eq!(result.steps.len(), 3);
+    assert_eq!(result.steps[0].outcome, StepOutcome::Compromised);
+    assert!(result.steps[0].reason.contains("validly signed"));
+    assert!(result.steps[0].controls_triggered[0].contains("signatureVerification"));
+    assert_eq!(result.steps[1].outcome, StepOutcome::Compromised);
+    assert_eq!(result.steps[2].outcome, StepOutcome::Compromised);
+    assert_eq!(result.steps[0].phase.as_deref(), Some("execution"));
+    assert!(result.steps.iter().all(|step| step.reverse.is_none()));
+    let json = serde_json::to_value(&result).expect("result serializes");
+    assert!(json.get("WormGenerations").is_none());
+    assert!(json.get("ExposedSecretIds").is_none());
+
+    graph.nodes[0]
+        .properties
+        .insert("reproducibleBuilds".into(), PropertyField::Boolean(true));
+    let blocked =
+        simulate_attack(&graph, "b".into(), "B", "BuildTamper").expect("valid BuildTamper");
+    assert_eq!(blocked.steps.len(), 1);
+    assert_eq!(blocked.steps[0].outcome, StepOutcome::Blocked);
+    assert_eq!(
+        blocked.steps[0].controls_triggered,
+        vec!["reproducibleBuilds"]
+    );
+    assert_eq!(blocked.blocked_node_ids, vec!["A"]);
+
+    graph.nodes[0].properties.clear();
+    graph.nodes[3].properties.insert(
+        "alertThreshold".into(),
+        PropertyField::String("All Anomalies (Zero-Tolerance)".into()),
+    );
+    let detected =
+        simulate_attack(&graph, "c".into(), "B", "BuildTamper").expect("valid BuildTamper");
+    assert_eq!(detected.steps.len(), 3);
+    assert_eq!(detected.steps[2].outcome, StepOutcome::Detected);
+    assert_eq!(detected.detected_at_step, Some(2));
+}
+
+#[test]
 fn test_chaindrop_controls_and_cycle_safety() {
     let mut graph = chain_graph();
     let base_steps = graph.edges.len();
@@ -865,7 +963,8 @@ fn test_chaindrop_controls_and_cycle_safety() {
 
     let mut graph = chain_graph();
     prop_bool(&mut graph.nodes[5], "signatureVerification", true);
-    let signature_blocked = simulate_attack(&graph, "a".into(), "D", "ChainDrop").expect("valid ChainDrop");
+    let signature_blocked =
+        simulate_attack(&graph, "a".into(), "D", "ChainDrop").expect("valid ChainDrop");
     assert!(
         signature_blocked
             .steps
@@ -882,7 +981,8 @@ fn test_chaindrop_token_scope_gates_republishing() {
     ] {
         let mut graph = chain_graph();
         prop_string(&mut graph.nodes[3], "tokenScope", scope);
-        let result = simulate_attack(&graph, "a".into(), "D", "ChainDrop").expect("valid ChainDrop");
+        let result =
+            simulate_attack(&graph, "a".into(), "D", "ChainDrop").expect("valid ChainDrop");
         assert!(
             result
                 .steps

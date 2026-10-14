@@ -262,6 +262,71 @@ fn evaluate_chaindrop(
     }
 }
 
+fn phase_for_new_scenarios(rel: &str) -> Option<String> {
+    match rel {
+        "contributes_to" | "maintains" | "triggers" | "produces" => Some("execution".into()),
+        "publishes" | "provides" | "delivers" | "deploys" => Some("propagation".into()),
+        _ => None,
+    }
+}
+
+fn evaluate_build_tamper(
+    rel: &str,
+    source: &Node,
+    target: &Node,
+) -> (StepOutcome, String, Vec<String>) {
+    match (rel, target.category_id.as_str()) {
+        ("produces" | "publishes", "artifact_storage") => {
+            if source.category_id == "build_environment"
+                && get_bool(&source.properties, "reproducibleBuilds")
+            {
+                (
+                    StepOutcome::Blocked,
+                    "Independent rebuild produces a different hash; the poisoned build is rejected"
+                        .into(),
+                    vec!["reproducibleBuilds".into()],
+                )
+            } else if get_bool(&target.properties, "signatureVerification") {
+                (
+                    StepOutcome::Compromised,
+                    "Signature verification passes because the poisoned build is validly signed"
+                        .into(),
+                    vec!["signatureVerification passes for a validly signed build".into()],
+                )
+            } else {
+                (
+                    StepOutcome::Compromised,
+                    "The poisoned build is accepted into artifact storage".into(),
+                    vec![],
+                )
+            }
+        }
+        ("provides" | "delivers", "distribution" | "runtime_environment") => (
+            StepOutcome::Compromised,
+            "Integrity hash matches the poisoned release".into(),
+            vec!["integrityCheck matches the poisoned release".into()],
+        ),
+        ("monitored_by", "monitoring_response") => {
+            if get_select(&target.properties, "alertThreshold")
+                == Some("All Anomalies (Zero-Tolerance)")
+            {
+                (
+                    StepOutcome::Detected,
+                    "Zero-Tolerance monitoring detects the anomalous build behavior".into(),
+                    vec!["alertThreshold".into()],
+                )
+            } else {
+                (
+                    StepOutcome::Compromised,
+                    "The implant mimics normal traffic and passes monitoring".into(),
+                    vec![],
+                )
+            }
+        }
+        _ => evaluate_base(rel, target),
+    }
+}
+
 /// Simulates a scenario from a valid start node.
 ///
 /// # Errors
@@ -280,7 +345,10 @@ pub fn simulate_attack(
         .get(start_node_id)
         .copied()
         .ok_or(crate::types::ApiError::NodeNotFound)?;
-    if !kind.valid_start_categories().contains(&start.category_id.as_str()) {
+    if !kind
+        .valid_start_categories()
+        .contains(&start.category_id.as_str())
+    {
         return Err(crate::types::ApiError::InvalidStartNode);
     }
     let mut steps = Vec::new();
@@ -311,10 +379,12 @@ pub fn simulate_attack(
             if !kind.follows(&edge.relationship, &target.category_id) {
                 continue;
             }
-            let (outcome, reason, controls) = if kind == ScenarioKind::ChainDrop {
-                evaluate_chaindrop(&edge.relationship, current, target)
-            } else {
-                evaluate_base(&edge.relationship, target)
+            let (outcome, reason, controls) = match kind {
+                ScenarioKind::ChainDrop => evaluate_chaindrop(&edge.relationship, current, target),
+                ScenarioKind::BuildTamper => {
+                    evaluate_build_tamper(&edge.relationship, current, target)
+                }
+                ScenarioKind::MaintainerTakeover => evaluate_base(&edge.relationship, target),
             };
             if edge.relationship == "republishes" && kind == ScenarioKind::ChainDrop {
                 let trusted = get_bool(&current.properties, "trustedPublishing");
@@ -385,9 +455,11 @@ pub fn simulate_attack(
                 controls,
                 true,
                 false,
-                (kind == ScenarioKind::ChainDrop)
-                    .then(|| phase_for(&edge.relationship))
-                    .flatten(),
+                if kind == ScenarioKind::ChainDrop {
+                    phase_for(&edge.relationship)
+                } else {
+                    phase_for_new_scenarios(&edge.relationship)
+                },
             );
             apply_outcome(
                 outcome,
