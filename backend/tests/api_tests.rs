@@ -34,6 +34,7 @@ use backend::get_relationships;
 use backend::get_scenarios;
 use backend::simulate_attack_handler;
 use backend::types::ApiError;
+use backend::types::AttackSimulationResult;
 use backend::types::Edge;
 use backend::types::Graph;
 use backend::types::Node;
@@ -307,7 +308,7 @@ async fn run_chaindrop_example_graph_regression() {
     let Json(project) = create_project(
         State(state.clone()),
         Json(CreateProject {
-            name: "ChainDrop npm Worm (example)".into(),
+            name: "Pipeline Attack Demo (example)".into(),
         }),
     )
     .await
@@ -460,6 +461,7 @@ async fn run_chaindrop_example_graph_regression() {
         ("dist", "delivers", "prod"),
         ("prod", "monitored_by", "siem"),
         ("siem", "alerts", "dev"),
+        ("maintainer", "contributes_to", "repo"),
     ];
     for (source, relationship, target) in edge_specs {
         let Json(edge) = create_edge(
@@ -698,14 +700,289 @@ async fn run_chaindrop_example_graph_regression() {
     );
     token_original.insert("autoRevoke".into(), PropertyField::Boolean(false));
     let Json(_) = edit_node(
-        State(state),
-        Path((project.id, ids["token"].clone())),
+        State(state.clone()),
+        Path((project.id.clone(), ids["token"].clone())),
         Json(EditNode {
             properties: token_original,
         }),
     )
     .await
     .expect("restore original token settings");
+
+    run_three_scenario_example_cases(state, project.id, ids).await;
+}
+
+async fn edit_example_property(
+    state: &AppState,
+    project_id: &str,
+    node_id: &str,
+    property_key: &str,
+    value: PropertyField,
+) {
+    let Json(_) = edit_node(
+        State(state.clone()),
+        Path((project_id.to_string(), node_id.to_string())),
+        Json(EditNode {
+            properties: HashMap::from([(property_key.into(), value)]),
+        }),
+    )
+    .await
+    .expect("example property should be editable");
+}
+
+async fn simulate_example_case(
+    state: &AppState,
+    project_id: &str,
+    start_node_id: &str,
+    scenario: &str,
+) -> AttackSimulationResult {
+    let Json(result) = simulate_attack_handler(
+        State(state.clone()),
+        Path(project_id.to_string()),
+        Json(SimulateAttack {
+            start_node_id: start_node_id.to_string(),
+            scenario: scenario.to_string(),
+        }),
+    )
+    .await
+    .expect("example scenario should simulate");
+    result
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_three_scenario_example_cases(
+    state: AppState,
+    project_id: String,
+    ids: HashMap<&str, String>,
+) {
+    let key_for_id = |id: &str| {
+        ids.iter()
+            .find_map(|(key, value)| (value == id).then_some(*key))
+            .expect("example node id has a key")
+    };
+    let trace_keys = |result: &AttackSimulationResult| {
+        result
+            .steps
+            .iter()
+            .map(|step| {
+                (
+                    key_for_id(&step.source_node_id).to_string(),
+                    step.relationship.clone(),
+                    key_for_id(&step.target_node_id).to_string(),
+                    step.outcome,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected_trace = |entries: Vec<(&str, &str, &str, StepOutcome)>| {
+        entries
+            .into_iter()
+            .map(|(source, relationship, target, outcome)| {
+                (source.into(), relationship.into(), target.into(), outcome)
+            })
+            .collect::<Vec<_>>()
+    };
+    let compromised_keys = |result: &AttackSimulationResult| {
+        let mut keys = result
+            .compromised_node_ids
+            .iter()
+            .map(|id| key_for_id(id))
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        keys
+    };
+    let blocked_keys = |result: &AttackSimulationResult| {
+        let mut keys = result
+            .blocked_node_ids
+            .iter()
+            .map(|id| key_for_id(id))
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        keys
+    };
+
+    let chain = simulate_example_case(&state, &project_id, &ids["maintainer"], "ChainDrop").await;
+    assert!(chain.steps.iter().any(|step| {
+        step.source_node_id == ids["maintainer"]
+            && step.relationship == "contributes_to"
+            && step.target_node_id == ids["repo"]
+            && step.outcome == StepOutcome::Blocked
+    }));
+
+    let case_a = simulate_example_case(&state, &project_id, &ids["build"], "BuildTamper").await;
+    assert_eq!(
+        trace_keys(&case_a),
+        expected_trace(vec![
+            ("build", "produces", "registry", StepOutcome::Compromised),
+            ("registry", "provides", "dist", StepOutcome::Compromised),
+            ("registry", "provides", "prod", StepOutcome::Compromised),
+            ("dist", "delivers", "prod", StepOutcome::Compromised),
+            ("prod", "monitored_by", "siem", StepOutcome::Compromised),
+        ])
+    );
+    assert_eq!(
+        compromised_keys(&case_a),
+        vec!["build", "dist", "prod", "registry", "siem"]
+    );
+    assert!(blocked_keys(&case_a).is_empty());
+    assert_eq!(case_a.detected_at_step, None);
+    assert!((case_a.overall_severity.score - 4.17).abs() < 0.01);
+
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["build"],
+        "reproducibleBuilds",
+        PropertyField::Boolean(true),
+    )
+    .await;
+    let case_b = simulate_example_case(&state, &project_id, &ids["build"], "BuildTamper").await;
+    assert_eq!(
+        trace_keys(&case_b),
+        expected_trace(vec![(
+            "build",
+            "produces",
+            "registry",
+            StepOutcome::Blocked
+        )])
+    );
+    assert_eq!(compromised_keys(&case_b), vec!["build"]);
+    assert_eq!(blocked_keys(&case_b), vec!["registry"]);
+    assert_eq!(case_b.detected_at_step, None);
+    assert!((case_b.overall_severity.score - 0.83).abs() < 0.01);
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["build"],
+        "reproducibleBuilds",
+        PropertyField::Boolean(false),
+    )
+    .await;
+
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["siem"],
+        "alertThreshold",
+        PropertyField::String("All Anomalies (Zero-Tolerance)".into()),
+    )
+    .await;
+    let case_c = simulate_example_case(&state, &project_id, &ids["build"], "BuildTamper").await;
+    assert_eq!(case_c.steps.len(), 5);
+    assert_eq!(case_c.steps[4].outcome, StepOutcome::Detected);
+    assert_eq!(case_c.detected_at_step, Some(4));
+    assert_eq!(
+        compromised_keys(&case_c),
+        vec!["build", "dist", "prod", "registry", "siem"]
+    );
+    assert!((case_c.overall_severity.score - 2.92).abs() < 0.01);
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["siem"],
+        "alertThreshold",
+        PropertyField::String("Strict Policy Violations".into()),
+    )
+    .await;
+
+    let case_d = simulate_example_case(
+        &state,
+        &project_id,
+        &ids["maintainer"],
+        "MaintainerTakeover",
+    )
+    .await;
+    assert_eq!(
+        trace_keys(&case_d),
+        expected_trace(vec![
+            (
+                "maintainer",
+                "contributes_to",
+                "repo",
+                StepOutcome::Compromised
+            ),
+            ("repo", "triggers", "ci", StepOutcome::Compromised),
+            ("ci", "publishes", "registry", StepOutcome::Compromised),
+            ("registry", "provides", "dist", StepOutcome::Compromised),
+            ("registry", "provides", "prod", StepOutcome::Compromised),
+            ("dist", "delivers", "prod", StepOutcome::Compromised),
+            ("prod", "monitored_by", "siem", StepOutcome::Compromised),
+        ])
+    );
+    assert_eq!(
+        compromised_keys(&case_d),
+        vec![
+            "ci",
+            "dist",
+            "maintainer",
+            "prod",
+            "registry",
+            "repo",
+            "siem"
+        ]
+    );
+    assert!(blocked_keys(&case_d).is_empty());
+    assert_eq!(case_d.detected_at_step, None);
+    assert!((case_d.overall_severity.score - 5.83).abs() < 0.01);
+
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["repo"],
+        "requiredReviewers",
+        PropertyField::String("2+ reviewers".into()),
+    )
+    .await;
+    let case_e = simulate_example_case(
+        &state,
+        &project_id,
+        &ids["maintainer"],
+        "MaintainerTakeover",
+    )
+    .await;
+    assert_eq!(case_e.steps.len(), 7);
+    assert_eq!(case_e.steps[0].outcome, StepOutcome::Slowed);
+    assert_eq!(compromised_keys(&case_e), compromised_keys(&case_d));
+    assert_eq!(case_e.detected_at_step, None);
+    assert!((case_e.overall_severity.score - 5.83).abs() < 0.01);
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["repo"],
+        "requiredReviewers",
+        PropertyField::String("None".into()),
+    )
+    .await;
+
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["ci"],
+        "releaseSource",
+        PropertyField::String("Built from tag".into()),
+    )
+    .await;
+    let case_f = simulate_example_case(
+        &state,
+        &project_id,
+        &ids["maintainer"],
+        "MaintainerTakeover",
+    )
+    .await;
+    assert_eq!(case_f.steps.len(), 3);
+    assert_eq!(case_f.steps[2].outcome, StepOutcome::Blocked);
+    assert_eq!(compromised_keys(&case_f), vec!["ci", "maintainer", "repo"]);
+    assert_eq!(blocked_keys(&case_f), vec!["registry"]);
+    assert_eq!(case_f.detected_at_step, None);
+    assert!((case_f.overall_severity.score - 2.5).abs() < 0.01);
+    edit_example_property(
+        &state,
+        &project_id,
+        &ids["ci"],
+        "releaseSource",
+        PropertyField::String("Uploaded tarball".into()),
+    )
+    .await;
 }
 
 #[tokio::test]
