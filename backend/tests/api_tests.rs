@@ -4,9 +4,11 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
 use axum::Json;
+use axum::body::to_bytes;
 use axum::extract::Path;
 use axum::extract::Query;
 use axum::extract::State;
+use axum::response::IntoResponse;
 use backend::AppState;
 use backend::CreateEdge;
 use backend::CreateNode;
@@ -1119,6 +1121,19 @@ fn test_scenario_parsing_and_start_categories() {
             Err(ApiError::InvalidStartNode)
         ));
     }
+}
+
+#[tokio::test]
+async fn test_invalid_scenario_response_code() {
+    let response = ApiError::InvalidScenario.into_response();
+    assert_eq!(response.status().as_u16(), 400);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("error response body should be readable");
+    let json: serde_json::Value =
+        serde_json::from_slice(&body).expect("error response body should be JSON");
+    assert_eq!(json["code"], "INVALID_SCENARIO");
+    assert_eq!(json["message"], "INVALID_SCENARIO");
 }
 
 #[test]

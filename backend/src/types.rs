@@ -167,7 +167,11 @@ impl IntoResponse for ApiError {
         let status = self.status_code();
 
         let response = ErrorResponse {
-            code: status.as_str().to_string(),
+            code: if matches!(self, Self::InvalidScenario) {
+                self.to_string()
+            } else {
+                status.as_str().to_string()
+            },
             message: self.to_string(),
         };
 
