@@ -829,6 +829,8 @@ export const DetailsPanel: React.FC = () => {
     attackResult,
     scenarios,
     clearAttackSimulation,
+    runAttackSimulation,
+    isSimulatingAttack,
     activeStepIndex,
     setActiveStepIndex
   } = useGraphStore();
@@ -850,10 +852,17 @@ export const DetailsPanel: React.FC = () => {
 
   if (!selectedNode && !selectedEdge) {
     if (appMode === 'attack' && attackResult) {
-      const scenarioName = scenarios.find((scenario) => scenario.id === attackResult.scenario)?.name
+      const scenarioInfo = scenarios.find((scenario) => scenario.id === attackResult.scenario);
+      const scenarioName = scenarioInfo?.name
         || attackResult.scenario;
       const startNode = nodes.find((n) => n.id === attackResult.startNodeId);
       const startName = startNode ? getProperty(startNode.properties, 'name') || startNode.id : attackResult.startNodeId;
+      const quickControls = (scenarioInfo?.keyControls || []).flatMap((control) => {
+        const targetNode = nodes.find((candidate) => candidate.categoryId === control.categoryId);
+        const category = nodeCategories.find((candidate) => candidate.id === control.categoryId);
+        const field = category?.fieldDefs.find((candidate) => candidate.key === control.propertyKey);
+        return targetNode && field ? [{ control, targetNode, field }] : [];
+      });
 
       return (
         <aside className="w-[300px] shrink-0 bg-[#0B1220]/80 backdrop-blur-md border-l border-white/5 flex flex-col h-full z-20 select-none animate-fade-in">
@@ -892,6 +901,72 @@ export const DetailsPanel: React.FC = () => {
                 {attackResult.overallSeverity.label} ({attackResult.overallSeverity.score.toFixed(1)}/10)
               </span>
             </div>
+            {attackResult.scenario === 'ChainDrop' ? (
+              <p className="text-[10px] text-slate-400">
+                {attackResult.wormGenerations !== undefined && (
+                  <span>Worm generations: {attackResult.wormGenerations}</span>
+                )}
+                {attackResult.wormGenerations !== undefined && attackResult.exposedSecretIds !== undefined && ' · '}
+                {attackResult.exposedSecretIds !== undefined && (
+                  <span>Exposed secrets: {attackResult.exposedSecretIds.length}</span>
+                )}
+              </p>
+            ) : (
+              <p className="text-[10px] text-slate-400">
+                Compromised: {attackResult.compromisedNodeIds.length} · Blocked: {attackResult.blockedNodeIds.length} · Severity: {attackResult.overallSeverity.score.toFixed(1)}/10
+              </p>
+            )}
+            {quickControls.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Key controls</span>
+                {quickControls.map(({ control, targetNode, field }) => {
+                  const currentValue = targetNode.properties[control.propertyKey] ?? field.defaultValue;
+                  const updateValue = (value: string | boolean | number) => {
+                    void updateNodeProperties(targetNode.id, {
+                      ...targetNode.properties,
+                      [control.propertyKey]: value
+                    });
+                  };
+                  return (
+                    <label key={`${targetNode.id}-${control.propertyKey}`} className="flex items-center justify-between gap-2 text-[10px] text-slate-300">
+                      <span className="min-w-0 truncate">{field.label}</span>
+                      {field.type === 'checkbox' ? (
+                        <input
+                          type="checkbox"
+                          checked={Boolean(currentValue)}
+                          onChange={(event) => updateValue(event.target.checked)}
+                          className="accent-cyan-500"
+                        />
+                      ) : field.type === 'select' ? (
+                        <select
+                          value={String(currentValue ?? '')}
+                          onChange={(event) => updateValue(event.target.value)}
+                          className="max-w-[150px] rounded border border-white/10 bg-[#0B1220] px-1.5 py-1 text-[10px] text-slate-200"
+                        >
+                          {(field.options || []).map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type === 'number' ? 'number' : 'text'}
+                          value={String(currentValue ?? '')}
+                          onChange={(event) => updateValue(field.type === 'number' ? Number(event.target.value) : event.target.value)}
+                          className="max-w-[150px] rounded border border-white/10 bg-[#0B1220] px-1.5 py-1 text-[10px] text-slate-200"
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+                <button
+                  onClick={() => void runAttackSimulation(attackResult.startNodeId, attackResult.scenario)}
+                  disabled={isSimulatingAttack}
+                  className="w-full rounded bg-cyan-500/15 px-2 py-1.5 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
+                >
+                  Re-run
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Step Trace List */}
@@ -919,7 +994,15 @@ export const DetailsPanel: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <span className="font-mono text-[10px] text-slate-400">Hop {idx + 1}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] text-slate-400">Hop {idx + 1}</span>
+                      {step.phase && (
+                        <span className="rounded bg-white/5 px-1 py-0.5 text-[9px] text-slate-400">{step.phase}</span>
+                      )}
+                      {step.reverse && (
+                        <span className="rounded bg-violet-500/15 px-1 py-0.5 text-[9px] text-violet-300">reverse</span>
+                      )}
+                    </div>
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                       step.outcome === 'COMPROMISED' ? 'bg-rose-500/20 text-rose-400' :
                       step.outcome === 'SLOWED' ? 'bg-amber-500/20 text-amber-400' :
