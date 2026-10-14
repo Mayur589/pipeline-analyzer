@@ -78,6 +78,45 @@ async fn test_node_categories_and_relationships() {
 }
 
 #[tokio::test]
+async fn test_three_scenario_property_definitions() {
+    let state = setup_test_state().await;
+    let Json(categories) = get_node_categories(State(state))
+        .await
+        .expect("node categories should return");
+    let field = |category_id: &str, property_key: &str| {
+        categories
+            .iter()
+            .find(|category| category.id == category_id)
+            .and_then(|category| category.field_defs.iter().find(|field| field.key == property_key))
+            .expect("scenario property should exist")
+    };
+
+    let reproducible = field("build_environment", "reproducibleBuilds");
+    assert_eq!(reproducible.ty, PropertyField::String("boolean".into()));
+    assert_eq!(reproducible.default_value, Some(PropertyField::Boolean(false)));
+    assert_eq!(reproducible.options, None);
+
+    let reviewers = field("source_control", "requiredReviewers");
+    assert_eq!(reviewers.ty, PropertyField::String("select".into()));
+    assert_eq!(
+        reviewers.options,
+        Some(vec!["None".into(), "1 reviewer".into(), "2+ reviewers".into()])
+    );
+    assert_eq!(reviewers.default_value, Some(PropertyField::String("None".into())));
+
+    let release = field("cicd_pipeline", "releaseSource");
+    assert_eq!(release.ty, PropertyField::String("select".into()));
+    assert_eq!(
+        release.options,
+        Some(vec!["Uploaded tarball".into(), "Built from tag".into()])
+    );
+    assert_eq!(
+        release.default_value,
+        Some(PropertyField::String("Uploaded tarball".into()))
+    );
+}
+
+#[tokio::test]
 async fn test_validate_relationship() {
     let state = setup_test_state().await;
 

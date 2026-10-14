@@ -71,6 +71,16 @@ fn source_control_category() -> NodeCategory {
                 options: None,
                 default_value: Some(PropertyField::Boolean(true)),
             },
+            PropertyFieldDef {
+                key: String::from("requiredReviewers"),
+                ty: PropertyField::String(String::from("select")),
+                options: Some(vec![
+                    String::from("None"),
+                    String::from("1 reviewer"),
+                    String::from("2+ reviewers"),
+                ]),
+                default_value: Some(PropertyField::String(String::from("None"))),
+            },
         ],
     }
 }
@@ -167,6 +177,12 @@ fn build_environment_category() -> NodeCategory {
                     "cgr.dev/chainguard/node:latest",
                 ))),
             },
+            PropertyFieldDef {
+                key: String::from("reproducibleBuilds"),
+                ty: PropertyField::String(String::from("boolean")),
+                options: None,
+                default_value: Some(PropertyField::Boolean(false)),
+            },
         ],
     }
 }
@@ -206,6 +222,15 @@ fn cicd_pipeline_category() -> NodeCategory {
                 ty: PropertyField::String(String::from("boolean")),
                 options: None,
                 default_value: Some(PropertyField::Boolean(false)),
+            },
+            PropertyFieldDef {
+                key: String::from("releaseSource"),
+                ty: PropertyField::String(String::from("select")),
+                options: Some(vec![
+                    String::from("Uploaded tarball"),
+                    String::from("Built from tag"),
+                ]),
+                default_value: Some(PropertyField::String(String::from("Uploaded tarball"))),
             },
         ],
     }
