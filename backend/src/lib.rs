@@ -579,8 +579,9 @@ pub async fn delete_edge(
 ///
 /// Returns [`ApiError::ProjectNotFound`] if the project does not exist,
 /// [`ApiError::NodeNotFound`] if `start_node_id` does not belong to the
-/// project, or [`ApiError::EmptyGraph`] if the project has no nodes to
-/// simulate against.
+/// project, [`ApiError::InvalidStartNode`] if its category is not valid for the
+/// scenario, [`ApiError::InvalidScenario`] if the scenario is unknown, or
+/// [`ApiError::EmptyGraph`] if the project has no nodes to simulate against.
 pub async fn simulate_attack_handler(
     State(state): State<AppState>,
     Path(project_id): Path<String>,
@@ -607,15 +608,6 @@ pub async fn simulate_attack_handler(
         return Err(ApiError::NodeNotFound);
     }
 
-    if attack::ScenarioKind::from_scenario(&request.scenario) == attack::ScenarioKind::ChainDrop
-        && !nodes.iter().any(|n| {
-            n.id == request.start_node_id
-                && matches!(n.category_id.as_str(), "dependencies" | "identity_people")
-        })
-    {
-        return Err(ApiError::InvalidStartNode);
-    }
-
     let edges: Vec<Edge> = db
         .edges
         .iter()
@@ -632,8 +624,12 @@ pub async fn simulate_attack_handler(
     };
 
     let attack_id = generate_id("attack");
-    let result =
-        attack::simulate_attack(&graph, attack_id, &request.start_node_id, &request.scenario);
+    let result = attack::simulate_attack(
+        &graph,
+        attack_id,
+        &request.start_node_id,
+        &request.scenario,
+    )?;
 
     Ok(Json(result))
 }

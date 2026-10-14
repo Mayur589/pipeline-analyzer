@@ -125,6 +125,7 @@ pub enum ApiError {
     ProjectNotFound,
     EmptyGraph, // new: nothing to simulate against
     InvalidStartNode,
+    InvalidScenario,
 }
 
 impl ApiError {
@@ -137,7 +138,8 @@ impl ApiError {
             Self::InvalidCategoryConnection
             | Self::InvalidRelationship
             | Self::EmptyGraph
-            | Self::InvalidStartNode => StatusCode::BAD_REQUEST,
+            | Self::InvalidStartNode
+            | Self::InvalidScenario => StatusCode::BAD_REQUEST,
         }
     }
 }

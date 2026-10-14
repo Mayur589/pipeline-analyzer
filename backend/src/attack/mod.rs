@@ -18,25 +18,69 @@ fn get_select<'a>(props: &'a NodeProperties, key: &str) -> Option<&'a str> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScenarioKind {
-    Generic,
     ChainDrop,
+    BuildTamper,
+    MaintainerTakeover,
 }
 
 impl ScenarioKind {
-    pub fn from_scenario(s: &str) -> Self {
-        if ["chaindrop", "chain_drop"]
-            .iter()
-            .any(|v| s.eq_ignore_ascii_case(v))
-        {
-            Self::ChainDrop
-        } else {
-            Self::Generic
+    pub fn parse(s: &str) -> Option<Self> {
+        let normalized = s
+            .chars()
+            .filter(|character| !matches!(character, '_' | '-' | ' '))
+            .flat_map(char::to_lowercase)
+            .collect::<String>();
+        match normalized.as_str() {
+            "chaindrop" => Some(Self::ChainDrop),
+            "buildtamper" => Some(Self::BuildTamper),
+            "maintainertakeover" => Some(Self::MaintainerTakeover),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::ChainDrop => "ChainDrop",
+            Self::BuildTamper => "BuildTamper",
+            Self::MaintainerTakeover => "MaintainerTakeover",
+        }
+    }
+
+    #[must_use]
+    pub fn valid_start_categories(self) -> &'static [&'static str] {
+        match self {
+            Self::ChainDrop => &["dependencies", "identity_people"],
+            Self::MaintainerTakeover => &["identity_people"],
+            Self::BuildTamper => &["build_environment"],
+        }
+    }
+
+    fn follows(self, rel: &str, target_category: &str) -> bool {
+        match self {
+            Self::ChainDrop => true,
+            Self::BuildTamper => matches!(
+                (rel, target_category),
+                ("produces" | "publishes", "artifact_storage")
+                    | ("provides", "distribution" | "runtime_environment")
+                    | ("delivers" | "deploys", "runtime_environment")
+                    | ("monitored_by", "monitoring_response")
+            ),
+            Self::MaintainerTakeover => matches!(
+                (rel, target_category),
+                ("contributes_to" | "maintains", "source_control")
+                    | ("triggers", "cicd_pipeline")
+                    | ("publishes", "artifact_storage")
+                    | ("provides", "distribution" | "runtime_environment")
+                    | ("delivers", "runtime_environment")
+                    | ("monitored_by", "monitoring_response")
+            ),
         }
     }
 }
 
-/// Evaluates the existing generic scenario rules. Keep these outcomes unchanged.
-fn evaluate_generic(relationship: &str, target: &Node) -> (StepOutcome, String, Vec<String>) {
+/// Shared base rule set used by scenario-specific evaluators. Keep these outcomes unchanged.
+fn evaluate_base(relationship: &str, target: &Node) -> (StepOutcome, String, Vec<String>) {
     match (relationship, target.category_id.as_str()) {
         ("contributes_to" | "maintains", "source_control") => {
             if get_bool(&target.properties, "branchProtection") {
@@ -214,19 +258,31 @@ fn evaluate_chaindrop(
         }
         ("publishes", "artifact_storage") if get_bool(&source.properties, "trustedPublishing") => (StepOutcome::Compromised, "Trusted publishing creates a poisoned release with valid OIDC provenance; signatureVerification does not block it".into(), vec!["trustedPublishing".into()]),
         ("provides" | "delivers", "distribution" | "runtime_environment") => (StepOutcome::Compromised, "Integrity check passes because the poisoned artifact hash matches the published release".into(), vec!["integrityCheck matches the poisoned artifact".into()]),
-        _ => evaluate_generic(rel, target),
+        _ => evaluate_base(rel, target),
     }
 }
 
-#[must_use]
+/// Simulates a scenario from a valid start node.
+///
+/// # Errors
+///
+/// Returns `InvalidScenario` for an unknown scenario, `NodeNotFound` for a
+/// missing start node, or `InvalidStartNode` when the start category is invalid.
 pub fn simulate_attack(
     graph: &Graph,
     attack_id: String,
     start_node_id: &str,
     scenario: &str,
-) -> AttackSimulationResult {
-    let kind = ScenarioKind::from_scenario(scenario);
+) -> Result<AttackSimulationResult, crate::types::ApiError> {
+    let kind = ScenarioKind::parse(scenario).ok_or(crate::types::ApiError::InvalidScenario)?;
     let node_by_id: HashMap<&str, &Node> = graph.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
+    let start = node_by_id
+        .get(start_node_id)
+        .copied()
+        .ok_or(crate::types::ApiError::NodeNotFound)?;
+    if !kind.valid_start_categories().contains(&start.category_id.as_str()) {
+        return Err(crate::types::ApiError::InvalidStartNode);
+    }
     let mut steps = Vec::new();
     let mut compromised = BTreeSet::from([start_node_id.to_string()]);
     let mut blocked = BTreeSet::new();
@@ -252,10 +308,13 @@ pub fn simulate_attack(
             let Some(&target) = node_by_id.get(edge.target_node_id.as_str()) else {
                 continue;
             };
+            if !kind.follows(&edge.relationship, &target.category_id) {
+                continue;
+            }
             let (outcome, reason, controls) = if kind == ScenarioKind::ChainDrop {
                 evaluate_chaindrop(&edge.relationship, current, target)
             } else {
-                evaluate_generic(&edge.relationship, target)
+                evaluate_base(&edge.relationship, target)
             };
             if edge.relationship == "republishes" && kind == ScenarioKind::ChainDrop {
                 let trusted = get_bool(&current.properties, "trustedPublishing");
@@ -316,33 +375,20 @@ pub fn simulate_attack(
                 );
                 continue;
             }
-            if kind == ScenarioKind::ChainDrop {
-                record_step(
-                    &mut steps,
-                    edge,
-                    &current_id,
-                    target,
-                    outcome,
-                    reason,
-                    controls,
-                    true,
-                    false,
-                    phase_for(&edge.relationship),
-                );
-            } else {
-                record_step(
-                    &mut steps,
-                    edge,
-                    &current_id,
-                    target,
-                    outcome,
-                    reason,
-                    controls,
-                    false,
-                    false,
-                    None,
-                );
-            }
+            record_step(
+                &mut steps,
+                edge,
+                &current_id,
+                target,
+                outcome,
+                reason,
+                controls,
+                true,
+                false,
+                (kind == ScenarioKind::ChainDrop)
+                    .then(|| phase_for(&edge.relationship))
+                    .flatten(),
+            );
             apply_outcome(
                 outcome,
                 target,
@@ -427,7 +473,7 @@ pub fn simulate_attack(
         graph.nodes.len(),
         detected_at_step.is_some(),
     );
-    AttackSimulationResult {
+    Ok(AttackSimulationResult {
         attack_id,
         project_id: graph.project_id.clone(),
         start_node_id: start_node_id.into(),
@@ -440,7 +486,7 @@ pub fn simulate_attack(
         worm_generations: (kind == ScenarioKind::ChainDrop).then_some(worm_generations),
         exposed_secret_ids: (kind == ScenarioKind::ChainDrop)
             .then(|| exposed.into_iter().collect()),
-    }
+    })
 }
 
 fn record_step(
