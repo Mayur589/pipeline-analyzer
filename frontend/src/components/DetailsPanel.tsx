@@ -61,6 +61,11 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
 
   const nodeEdges = edges.filter((e) => e.sourceNodeId === node.id || e.targetNodeId === node.id);
   const otherNodes = nodes.filter((n) => n.id !== node.id);
+  const selectedScenarioInfo = scenarios.find((scenario) => scenario.id === selectedScenario);
+  const isValidScenarioStart = selectedScenarioInfo?.validStartCategories.includes(node.categoryId) ?? false;
+  const recommendedStartNode = selectedScenarioInfo
+    ? nodes.find((candidate) => candidate.categoryId === selectedScenarioInfo.defaultStartCategory)
+    : undefined;
 
   const handleAddConnection = async () => {
     if (!selectedTargetId) return;
@@ -219,13 +224,34 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
                 </option>
               ))}
             </select>
+            {selectedScenarioInfo && (
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                {selectedScenarioInfo.description}
+              </p>
+            )}
           </div>
+
+          {!isValidScenarioStart && selectedScenarioInfo && (
+            <p className="text-[10px] text-amber-300">
+              Start from: {selectedScenarioInfo.validStartCategories
+                .map((categoryId) => nodeCategories.find((item) => item.id === categoryId)?.category || formatRelationshipLabel(categoryId))
+                .join(', ')}
+            </p>
+          )}
+
+          <button
+            onClick={() => recommendedStartNode && selectNode(recommendedStartNode.id)}
+            disabled={!recommendedStartNode || isSimulatingAttack}
+            className="w-full py-1.5 px-3 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 text-[10px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Use recommended start
+          </button>
 
           <button
             onClick={async () => {
               await runAttackSimulation(node.id, selectedScenario);
             }}
-            disabled={isSimulatingAttack}
+            disabled={isSimulatingAttack || !isValidScenarioStart}
             className="w-full py-2 px-3 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSimulatingAttack ? (
@@ -801,6 +827,7 @@ export const DetailsPanel: React.FC = () => {
     nodeCategories,
     appMode,
     attackResult,
+    scenarios,
     clearAttackSimulation,
     activeStepIndex,
     setActiveStepIndex
@@ -823,6 +850,8 @@ export const DetailsPanel: React.FC = () => {
 
   if (!selectedNode && !selectedEdge) {
     if (appMode === 'attack' && attackResult) {
+      const scenarioName = scenarios.find((scenario) => scenario.id === attackResult.scenario)?.name
+        || attackResult.scenario;
       const startNode = nodes.find((n) => n.id === attackResult.startNodeId);
       const startName = startNode ? getProperty(startNode.properties, 'name') || startNode.id : attackResult.startNodeId;
 
@@ -845,7 +874,7 @@ export const DetailsPanel: React.FC = () => {
             <div>
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Scenario</span>
               <h3 className="text-sm font-semibold text-slate-100 mt-0.5 truncate">
-                {formatRelationshipLabel(attackResult.scenario)}
+                {scenarioName}
               </h3>
               <p className="text-[11px] text-slate-400 mt-1">
                 Origin: <span className="text-rose-300 font-medium">{startName}</span>
