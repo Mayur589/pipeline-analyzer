@@ -1,6 +1,7 @@
 import {
   getNodeTypes,
   getRelationships,
+  getScenarios,
   validateRelationship,
   getProjects,
   createProject,
@@ -31,6 +32,14 @@ async function runLiveBackendTests() {
     throw new Error('Failed to parse identity_people fields');
   }
   console.log(`   ✓ Category "${identityCat.category}" has ${identityCat.fieldDefs.length} dynamic fieldDefs.`);
+
+  // GET /scenarios
+  console.log('1b. Testing GET /scenarios');
+  const scenarios = await getScenarios();
+  if (scenarios.length !== 3) {
+    throw new Error(`Expected 3 scenarios, got ${scenarios.length}`);
+  }
+  console.log(`   ✓ Received ${scenarios.map((scenario) => scenario.id).join(', ')}.`);
 
   // 2. GET /relationships
   console.log('2. Testing GET /relationships');
@@ -144,7 +153,7 @@ async function runLiveBackendTests() {
   const attackResult = await simulateAttack(
     testProject.id,
     node1.id,
-    'compromised_maintainer_credentials'
+    'MaintainerTakeover'
   );
   console.log(`   ✓ Attack simulated: id=${attackResult.attackId}, severity=${attackResult.overallSeverity.label} (${attackResult.overallSeverity.score}), steps=${attackResult.steps.length}`);
   if (!attackResult.attackId || attackResult.projectId !== testProject.id || attackResult.startNodeId !== node1.id) {

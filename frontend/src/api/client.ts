@@ -6,7 +6,8 @@ import type {
   Node,
   Edge,
   NodeProperties,
-  AttackSimulationResult
+  AttackSimulationResult,
+  ScenarioInfo
 } from '../types/graph';
 import { getRelationshipColor } from '../types/graph.ts';
 
@@ -57,6 +58,8 @@ interface BackendAttackStep {
   Outcome: 'COMPROMISED' | 'SLOWED' | 'BLOCKED' | 'DETECTED';
   Reason: string;
   ControlsTriggered: string[];
+  Phase?: string;
+  Reverse?: boolean;
 }
 
 interface BackendSeverityScore {
@@ -74,6 +77,22 @@ interface BackendAttackSimulationResult {
   BlockedNodeIds: string[];
   DetectedAtStep: number | null;
   OverallSeverity: BackendSeverityScore;
+  WormGenerations?: number;
+  ExposedSecretIds?: string[];
+}
+
+interface BackendKeyControl {
+  CategoryId: string;
+  PropertyKey: string;
+}
+
+interface BackendScenarioInfo {
+  Id: string;
+  Name: string;
+  Description: string;
+  ValidStartCategories: string[];
+  DefaultStartCategory: string;
+  KeyControls: BackendKeyControl[];
 }
 
 interface BackendErrorResponse {
@@ -187,6 +206,22 @@ export async function getNodeTypes(): Promise<NodeCategory[]> {
  */
 export async function getRelationships(): Promise<string[]> {
   return request<string[]>('/relationships', { method: 'GET' });
+}
+
+/** GET /scenarios: supported scenarios and their start guidance. */
+export async function getScenarios(): Promise<ScenarioInfo[]> {
+  const data = await request<BackendScenarioInfo[]>('/scenarios', { method: 'GET' });
+  return data.map((scenario) => ({
+    id: scenario.Id,
+    name: scenario.Name,
+    description: scenario.Description,
+    validStartCategories: scenario.ValidStartCategories,
+    defaultStartCategory: scenario.DefaultStartCategory,
+    keyControls: scenario.KeyControls.map((control) => ({
+      categoryId: control.CategoryId,
+      propertyKey: control.PropertyKey
+    }))
+  }));
 }
 
 /**
@@ -455,7 +490,7 @@ export async function deleteEdge(projectId: string, edgeId: string): Promise<voi
 export async function simulateAttack(
   projectId: string,
   startNodeId: string,
-  scenario: string = 'compromised_maintainer_credentials'
+  scenario: string
 ): Promise<AttackSimulationResult> {
   const data = await request<BackendAttackSimulationResult>(
     `/projects/${encodeURIComponent(projectId)}/attack`,
@@ -479,7 +514,9 @@ export async function simulateAttack(
       relationship: s.Relationship,
       outcome: s.Outcome,
       reason: s.Reason,
-      controlsTriggered: s.ControlsTriggered || []
+      controlsTriggered: s.ControlsTriggered || [],
+      phase: s.Phase,
+      reverse: s.Reverse
     })),
     compromisedNodeIds: data.CompromisedNodeIds || [],
     blockedNodeIds: data.BlockedNodeIds || [],
@@ -487,13 +524,16 @@ export async function simulateAttack(
     overallSeverity: {
       score: data.OverallSeverity?.Score ?? 0,
       label: data.OverallSeverity?.Label ?? 'Low'
-    }
+    },
+    wormGenerations: data.WormGenerations,
+    exposedSecretIds: data.ExposedSecretIds
   };
 }
 
 export const api = {
   getNodeTypes,
   getRelationships,
+  getScenarios,
   validateRelationship,
   getProjects,
   createProject,

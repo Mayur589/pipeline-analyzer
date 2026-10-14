@@ -47,7 +47,8 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
     isSimulatingAttack,
     runAttackSimulation,
     selectedScenario,
-    setSelectedScenario
+    setSelectedScenario,
+    scenarios
   } = useGraphStore();
   const [selectedTargetId, setSelectedTargetId] = useState<string>('');
   const [localProps, setLocalProps] = useState<NodeProperties>(() =>
@@ -212,19 +213,11 @@ const NodeInspector: React.FC<NodeInspectorProps> = ({
               disabled={isSimulatingAttack}
               className="w-full bg-[#0B1220] border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500/60 cursor-pointer disabled:opacity-50"
             >
-              <option value="compromised_maintainer_credentials">
-                Compromised Maintainer Credentials
-              </option>
-              <option value="supply_chain_poisoning">
-                Supply Chain Poisoning
-              </option>
-              <option value="ci_pipeline_takeover">
-                CI/CD Pipeline Takeover
-              </option>
-              <option value="registry_credential_leak">
-                Registry Credential Leak
-              </option>
-              <option value="ChainDrop">ChainDrop npm Worm</option>
+              {scenarios.map((scenario) => (
+                <option key={scenario.id} value={scenario.id}>
+                  {scenario.name}
+                </option>
+              ))}
             </select>
           </div>
 

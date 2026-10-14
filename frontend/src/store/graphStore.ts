@@ -7,7 +7,8 @@ import type {
   CreateEdgeInput,
   NodeProperties,
   Project,
-  AttackSimulationResult
+  AttackSimulationResult,
+  ScenarioInfo
 } from '../types/graph';
 import {
   api,
@@ -30,6 +31,7 @@ interface GraphStoreState {
   connectSourceId: string | null;
   nodeCategories: NodeCategory[];
   allRelationships: string[];
+  scenarios: ScenarioInfo[];
 
   // Mode state
   appMode: 'edit' | 'attack';
@@ -94,6 +96,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   connectSourceId: null,
   nodeCategories: [],
   allRelationships: [],
+  scenarios: [],
   appMode: 'edit',
   attackResult: null,
   isSimulatingAttack: false,
@@ -101,7 +104,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   activeStepIndex: -1,
   isPlayingSimulation: false,
   simulationPlaybackSpeed: 800,
-  selectedScenario: 'compromised_maintainer_credentials',
+  selectedScenario: 'ChainDrop',
   isLoading: false,
   error: null,
 
@@ -116,13 +119,14 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   initialize: async () => {
     set({ isLoading: true, error: null });
     try {
-      // Concurrently load node categories and relationships metadata
-      const [categories, relationships] = await Promise.all([
+      // Concurrently load node categories, relationships, and scenario metadata
+      const [categories, relationships, scenarios] = await Promise.all([
         api.getNodeTypes(),
-        api.getRelationships()
+        api.getRelationships(),
+        api.getScenarios()
       ]);
 
-      set({ nodeCategories: categories, allRelationships: relationships });
+      set({ nodeCategories: categories, allRelationships: relationships, scenarios });
 
       // Load projects and active graph
       await get().loadProjects();
@@ -538,7 +542,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       set({ attackError: 'No active project selected' });
       return null;
     }
-    const targetScenario = scenario || selectedScenario || 'compromised_maintainer_credentials';
+    const targetScenario = scenario || selectedScenario || 'ChainDrop';
     set({
       isSimulatingAttack: true,
       attackError: null,

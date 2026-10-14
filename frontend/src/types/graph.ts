@@ -295,6 +295,8 @@ export interface AttackStep {
   outcome: StepOutcome;
   reason: string;
   controlsTriggered: string[];
+  phase?: string;
+  reverse?: boolean;
 }
 
 export interface AttackSimulationResult {
@@ -307,6 +309,22 @@ export interface AttackSimulationResult {
   blockedNodeIds: string[];
   detectedAtStep: number | null;
   overallSeverity: SeverityScore;
+  wormGenerations?: number;
+  exposedSecretIds?: string[];
+}
+
+export interface KeyControl {
+  categoryId: string;
+  propertyKey: string;
+}
+
+export interface ScenarioInfo {
+  id: string;
+  name: string;
+  description: string;
+  validStartCategories: string[];
+  defaultStartCategory: string;
+  keyControls: KeyControl[];
 }
 
 export const OUTCOME_COLORS: Record<StepOutcome, string> = {
