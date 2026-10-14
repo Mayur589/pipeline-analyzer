@@ -885,6 +885,93 @@ fn test_build_tamper_paths_and_permissive_missing_control() {
 }
 
 #[test]
+fn test_takeover_rules_and_edge_scoping() {
+    let make_graph = |reviewers: Option<&str>| {
+        let mut repo_properties =
+            HashMap::from([("branchProtection".into(), PropertyField::Boolean(true))]);
+        if let Some(value) = reviewers {
+            repo_properties.insert(
+                "requiredReviewers".into(),
+                PropertyField::String(value.into()),
+            );
+        }
+        Graph {
+            project_id: "p".into(),
+            nodes: vec![
+                chain_node("M", "identity_people", HashMap::new()),
+                chain_node("R", "source_control", repo_properties),
+                chain_node("C", "cicd_pipeline", HashMap::new()),
+                chain_node("A", "artifact_storage", HashMap::new()),
+                chain_node("P", "runtime_environment", HashMap::new()),
+                chain_node(
+                    "S",
+                    "monitoring_response",
+                    HashMap::from([(
+                        "alertThreshold".into(),
+                        PropertyField::String("All Anomalies (Zero-Tolerance)".into()),
+                    )]),
+                ),
+                chain_node("D", "dependencies", HashMap::new()),
+            ],
+            edges: [
+                ("M", "R", "contributes_to"),
+                ("M", "D", "maintains"),
+                ("M", "C", "operates"),
+                ("R", "C", "triggers"),
+                ("C", "A", "publishes"),
+                ("C", "D", "republishes"),
+                ("A", "P", "provides"),
+                ("P", "S", "monitored_by"),
+            ]
+            .iter()
+            .enumerate()
+            .map(|(index, (source, target, relationship))| Edge {
+                id: format!("e{index}"),
+                source_node_id: (*source).into(),
+                target_node_id: (*target).into(),
+                relationship: (*relationship).into(),
+            })
+            .collect(),
+        }
+    };
+
+    for reviewers in [None, Some("1 reviewer")] {
+        let graph = make_graph(reviewers);
+        let result = simulate_attack(&graph, "a".into(), "M", "MaintainerTakeover")
+            .expect("valid MaintainerTakeover");
+        assert_eq!(result.steps[0].outcome, StepOutcome::Compromised);
+        assert_eq!(result.detected_at_step, None);
+        assert!(
+            !result
+                .steps
+                .iter()
+                .any(|step| step.relationship == "operates")
+        );
+        assert!(
+            !result
+                .steps
+                .iter()
+                .any(|step| step.relationship == "republishes")
+        );
+        assert!(
+            !result
+                .steps
+                .iter()
+                .any(|step| step.relationship == "maintains" && step.target_node_id == "D")
+        );
+        assert!(!result.compromised_node_ids.contains(&"D".to_string()));
+    }
+
+    let graph = make_graph(Some("2+ reviewers"));
+    let result = simulate_attack(&graph, "a".into(), "M", "MaintainerTakeover")
+        .expect("valid MaintainerTakeover");
+    assert_eq!(result.steps[0].outcome, StepOutcome::Slowed);
+    assert_eq!(result.steps[1].relationship, "triggers");
+    assert_eq!(result.steps[1].outcome, StepOutcome::Compromised);
+    assert!(result.detected_at_step.is_none());
+}
+
+#[test]
 fn test_chaindrop_controls_and_cycle_safety() {
     let mut graph = chain_graph();
     let base_steps = graph.edges.len();
@@ -1318,7 +1405,6 @@ async fn test_edge_crud_validation_and_cascade() {
 }
 
 #[tokio::test]
-#[ignore = "re-enabled in T4"]
 async fn test_simulate_attack() {
     let state = setup_test_state().await;
 
@@ -1443,12 +1529,15 @@ async fn test_simulate_attack() {
     assert!(result.blocked_node_ids.is_empty());
     assert!(result.detected_at_step.is_none());
 
-    // Now flip branch protection on and re-run: the repo hop should be blocked
-    // and the attack should not reach the pipeline.
+    // Multiple reviewers slow a trusted maintainer; branch protection is bypassed.
     let mut protected_props = HashMap::new();
     protected_props.insert(
         String::from("branchProtection"),
         PropertyField::Boolean(true),
+    );
+    protected_props.insert(
+        String::from("requiredReviewers"),
+        PropertyField::String("2+ reviewers".into()),
     );
     let Json(_) = edit_node(
         State(state.clone()),
@@ -1471,11 +1560,45 @@ async fn test_simulate_attack() {
     .await
     .expect("attack simulation should succeed");
 
-    assert_eq!(blocked_result.steps.len(), 1);
-    assert_eq!(blocked_result.steps[0].outcome, StepOutcome::Blocked);
-    assert_eq!(blocked_result.compromised_node_ids.len(), 1);
-    assert!(blocked_result.compromised_node_ids.contains(&identity.id));
-    assert_eq!(blocked_result.blocked_node_ids, vec![repo.id.clone()]);
+    assert_eq!(blocked_result.steps.len(), 2);
+    assert_eq!(blocked_result.steps[0].outcome, StepOutcome::Slowed);
+    assert!(
+        blocked_result.steps[0]
+            .controls_triggered
+            .contains(&"requiredReviewers".into())
+    );
+    assert_eq!(blocked_result.compromised_node_ids.len(), 3);
+    assert!(blocked_result.blocked_node_ids.is_empty());
+
+    // Branch protection alone does not block a trusted maintainer.
+    let mut branch_only = HashMap::new();
+    branch_only.insert("branchProtection".into(), PropertyField::Boolean(true));
+    branch_only.insert(
+        "requiredReviewers".into(),
+        PropertyField::String("None".into()),
+    );
+    let Json(_) = edit_node(
+        State(state.clone()),
+        Path((proj.id.clone(), repo.id.clone())),
+        Json(EditNode {
+            properties: branch_only,
+        }),
+    )
+    .await
+    .expect("restore no additional reviewers");
+    let Json(branch_result) = simulate_attack_handler(
+        State(state.clone()),
+        Path(proj.id.clone()),
+        Json(SimulateAttack {
+            start_node_id: identity.id.clone(),
+            scenario: String::from("MaintainerTakeover"),
+        }),
+    )
+    .await
+    .expect("trusted maintainer should bypass branch protection");
+    assert_eq!(branch_result.steps.len(), 2);
+    assert_eq!(branch_result.steps[0].outcome, StepOutcome::Compromised);
+    assert!(branch_result.blocked_node_ids.is_empty());
 
     // Nonexistent project should 404.
     let missing_project_err = simulate_attack_handler(

@@ -327,6 +327,66 @@ fn evaluate_build_tamper(
     }
 }
 
+fn evaluate_takeover(
+    rel: &str,
+    source: &Node,
+    target: &Node,
+) -> (StepOutcome, String, Vec<String>) {
+    match (rel, target.category_id.as_str()) {
+        ("contributes_to" | "maintains", "source_control") => {
+            let branch_protection = get_bool(&target.properties, "branchProtection");
+            let mut controls = Vec::new();
+            let mut reason = if get_select(&target.properties, "requiredReviewers")
+                == Some("2+ reviewers")
+            {
+                controls.push("requiredReviewers".into());
+                "Multiple reviewers slow the trusted maintainer's change, but do not stop it".to_string()
+            } else {
+                "A trusted maintainer's change enters reviewed history; the single approver is an accomplice".to_string()
+            };
+            if branch_protection {
+                controls.push("branchProtection bypassed by trusted maintainer".into());
+                reason.push_str("; branch protection does not constrain this trusted maintainer");
+            }
+            let outcome = if controls.iter().any(|control| control == "requiredReviewers") {
+                StepOutcome::Slowed
+            } else {
+                StepOutcome::Compromised
+            };
+            (outcome, reason, controls)
+        }
+        ("publishes", "artifact_storage")
+            if get_select(&source.properties, "releaseSource") == Some("Built from tag") =>
+        {
+            (
+                StepOutcome::Blocked,
+                "The release is built from the reviewed tag, so the payload hidden in the uploaded tarball cannot ship".into(),
+                vec!["releaseSource".into()],
+            )
+        }
+        ("publishes", "artifact_storage") => (
+            StepOutcome::Compromised,
+            "The uploaded tarball differs from reviewed repository history but is legitimately signed; signature verification passes".into(),
+            if get_bool(&target.properties, "signatureVerification") {
+                vec!["signatureVerification passes for the legitimately signed release".into()]
+            } else {
+                vec![]
+            },
+        ),
+        ("provides" | "delivers", "distribution" | "runtime_environment") => (
+            StepOutcome::Compromised,
+            "Integrity hash matches the poisoned release".into(),
+            vec!["integrityCheck matches the poisoned release".into()],
+        ),
+        ("monitored_by", "monitoring_response") => (
+            StepOutcome::Compromised,
+            "Legitimate maintainer access raises no monitoring anomaly".into(),
+            vec![],
+        ),
+        _ => evaluate_base(rel, target),
+    }
+}
+
 /// Simulates a scenario from a valid start node.
 ///
 /// # Errors
@@ -384,7 +444,9 @@ pub fn simulate_attack(
                 ScenarioKind::BuildTamper => {
                     evaluate_build_tamper(&edge.relationship, current, target)
                 }
-                ScenarioKind::MaintainerTakeover => evaluate_base(&edge.relationship, target),
+                ScenarioKind::MaintainerTakeover => {
+                    evaluate_takeover(&edge.relationship, current, target)
+                }
             };
             if edge.relationship == "republishes" && kind == ScenarioKind::ChainDrop {
                 let trusted = get_bool(&current.properties, "trustedPublishing");
