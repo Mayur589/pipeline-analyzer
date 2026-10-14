@@ -206,8 +206,7 @@ async fn test_chaindrop_start_node_validation() {
     assert!(matches!(error, ApiError::InvalidStartNode));
 }
 
-#[tokio::test]
-async fn test_chaindrop_example_graph_validates_and_simulates() {
+async fn run_chaindrop_example_graph_regression() {
     let state = setup_test_state().await;
     let Json(project) = create_project(
         State(state.clone()),
@@ -394,6 +393,46 @@ async fn test_chaindrop_example_graph_validates_and_simulates() {
         )
     };
     let Json(result) = simulate().await.expect("example attack should simulate");
+    let key_for_id = |id: &str| {
+        ids.iter()
+            .find_map(|(key, value)| (value == id).then_some(*key))
+            .expect("golden result node id should have an example key")
+    };
+    let mut compromised_keys = result
+        .compromised_node_ids
+        .iter()
+        .map(|id| key_for_id(id))
+        .collect::<Vec<_>>();
+    compromised_keys.sort_unstable();
+    let mut blocked_keys = result
+        .blocked_node_ids
+        .iter()
+        .map(|id| key_for_id(id))
+        .collect::<Vec<_>>();
+    blocked_keys.sort_unstable();
+    let golden = serde_json::json!({
+        "Steps": result.steps.iter().map(|step| serde_json::json!({
+            "Source": key_for_id(&step.source_node_id),
+            "Relationship": step.relationship,
+            "Target": key_for_id(&step.target_node_id),
+            "Outcome": step.outcome,
+            "Phase": step.phase,
+            "Reverse": step.reverse,
+        })).collect::<Vec<_>>(),
+        "Compromised": compromised_keys,
+        "Blocked": blocked_keys,
+        "DetectedAtStep": result.detected_at_step,
+        "WormGenerations": result.worm_generations,
+        "ExposedSecretIds": result.exposed_secret_ids.as_ref().map(|values| {
+            let mut keys = values.iter().map(|id| key_for_id(id)).collect::<Vec<_>>();
+            keys.sort_unstable();
+            keys
+        }),
+        "Severity": result.overall_severity,
+    });
+    let expected: serde_json::Value = serde_json::from_str(include_str!("fixtures/chaindrop_golden.json"))
+        .expect("golden fixture is valid JSON");
+    assert_eq!(golden, expected, "ChainDrop deps trace changed");
     let find_step = |source: &str, relationship: &str, target: &str| {
         result.steps.iter().find(|step| {
             step.source_node_id == ids[source]
@@ -570,6 +609,16 @@ async fn test_chaindrop_example_graph_validates_and_simulates() {
     )
     .await
     .expect("restore original token settings");
+}
+
+#[tokio::test]
+async fn test_chaindrop_example_graph_validates_and_simulates() {
+    run_chaindrop_example_graph_regression().await;
+}
+
+#[tokio::test]
+async fn test_chaindrop_golden_trace() {
+    run_chaindrop_example_graph_regression().await;
 }
 
 fn chain_node(id: &str, category: &str, properties: HashMap<String, PropertyField>) -> Node {

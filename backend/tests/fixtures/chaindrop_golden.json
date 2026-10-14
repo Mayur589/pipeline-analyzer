@@ -1,0 +1,28 @@
+{
+  "Blocked": ["registry"],
+  "Compromised": ["build", "ci", "deps", "deps2", "dev", "dist", "prod", "registry", "siem", "token"],
+  "DetectedAtStep": 16,
+  "ExposedSecretIds": ["token"],
+  "Severity": {"Label": "High", "Score": 5.833333333333333},
+  "Steps": [
+    {"Outcome": "COMPROMISED", "Phase": "execution", "Relationship": "consumed_by", "Reverse": null, "Source": "deps", "Target": "build"},
+    {"Outcome": "COMPROMISED", "Phase": "execution", "Relationship": "consumed_by", "Reverse": null, "Source": "deps", "Target": "dev"},
+    {"Outcome": "BLOCKED", "Phase": null, "Relationship": "produces", "Reverse": null, "Source": "build", "Target": "registry"},
+    {"Outcome": "COMPROMISED", "Phase": null, "Relationship": "logs_to", "Reverse": null, "Source": "build", "Target": "siem"},
+    {"Outcome": "COMPROMISED", "Phase": "harvest", "Relationship": "authenticates", "Reverse": true, "Source": "build", "Target": "token"},
+    {"Outcome": "COMPROMISED", "Phase": null, "Relationship": "accesses", "Reverse": null, "Source": "dev", "Target": "token"},
+    {"Outcome": "COMPROMISED", "Phase": null, "Relationship": "alerts", "Reverse": null, "Source": "siem", "Target": "dev"},
+    {"Outcome": "COMPROMISED", "Phase": null, "Relationship": "authenticates", "Reverse": null, "Source": "token", "Target": "ci"},
+    {"Outcome": "COMPROMISED", "Phase": "execution", "Relationship": "executes", "Reverse": null, "Source": "ci", "Target": "build"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "publishes", "Reverse": null, "Source": "ci", "Target": "registry"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "republishes", "Reverse": null, "Source": "ci", "Target": "deps"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "republishes", "Reverse": null, "Source": "ci", "Target": "deps2"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "deploys", "Reverse": null, "Source": "ci", "Target": "prod"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "provides", "Reverse": null, "Source": "registry", "Target": "dist"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "provides", "Reverse": null, "Source": "registry", "Target": "prod"},
+    {"Outcome": "COMPROMISED", "Phase": "execution", "Relationship": "consumed_by", "Reverse": null, "Source": "deps2", "Target": "dev"},
+    {"Outcome": "DETECTED", "Phase": null, "Relationship": "monitored_by", "Reverse": null, "Source": "prod", "Target": "siem"},
+    {"Outcome": "COMPROMISED", "Phase": "propagation", "Relationship": "delivers", "Reverse": null, "Source": "dist", "Target": "prod"}
+  ],
+  "WormGenerations": 2
+}
