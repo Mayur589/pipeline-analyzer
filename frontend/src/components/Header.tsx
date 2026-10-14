@@ -158,7 +158,7 @@ export const Header: React.FC = () => {
 
     try {
       // Give the example its own named project, preserving the active graph.
-      await createNewProject('ChainDrop npm Worm (example)');
+      await createNewProject('Pipeline Attack Demo (example)');
       clearCanvas();
       setSelectedScenario('ChainDrop');
 
@@ -167,9 +167,9 @@ export const Header: React.FC = () => {
         { key: 'dev', categoryId: 'identity_people', name: 'Developer Workstation', values: { mfaEnabled: true } },
         { key: 'deps', categoryId: 'dependencies', name: 'npm: cache-utils', values: { lifecycleScripts: 'Enabled', releaseCooldown: 'None', lockfilePinned: false, vulnerabilityScanning: true } },
         { key: 'deps2', categoryId: 'dependencies', name: 'npm: downstream-app', values: { lifecycleScripts: 'Enabled', releaseCooldown: 'None', lockfilePinned: false, vulnerabilityScanning: true } },
-        { key: 'repo', categoryId: 'source_control', name: 'app-repo', values: { branchProtection: true } },
-        { key: 'build', categoryId: 'build_environment', name: 'Shared CI Runner', values: { isolationLevel: 'Shared Node' } },
-        { key: 'ci', categoryId: 'cicd_pipeline', name: 'Release Workflow', values: { trustedPublishing: true, approvalRequired: false } },
+        { key: 'repo', categoryId: 'source_control', name: 'app-repo', values: { branchProtection: true, requiredReviewers: 'None' } },
+        { key: 'build', categoryId: 'build_environment', name: 'Shared CI Runner', values: { isolationLevel: 'Shared Node', reproducibleBuilds: false } },
+        { key: 'ci', categoryId: 'cicd_pipeline', name: 'Release Workflow', values: { trustedPublishing: true, approvalRequired: false, releaseSource: 'Uploaded tarball' } },
         { key: 'token', categoryId: 'secrets_credentials', name: 'npm Publish Token', values: { tokenScope: 'Publish + 2FA Bypass', autoRevoke: false, vaultType: 'HashiCorp Vault' } },
         { key: 'registry', categoryId: 'artifact_storage', name: 'Internal Registry', values: { signatureVerification: true, immutableTags: true } },
         { key: 'dist', categoryId: 'distribution', name: 'CDN', values: { integrityCheck: true } },
@@ -233,7 +233,8 @@ export const Header: React.FC = () => {
         ['registry', 'provides', 'prod'],
         ['dist', 'delivers', 'prod'],
         ['prod', 'monitored_by', 'siem'],
-        ['siem', 'alerts', 'dev']
+        ['siem', 'alerts', 'dev'],
+        ['maintainer', 'contributes_to', 'repo']
       ];
 
       for (const [sourceKey, relationshipId, targetKey] of edgeSpecs) {
@@ -247,7 +248,7 @@ export const Header: React.FC = () => {
         await addEdge({ sourceNodeId: source.id, targetNodeId: target.id, relationshipId });
       }
     } catch (e) {
-      console.error('Failed to load ChainDrop example:', e);
+      console.error('Failed to load pipeline attack demo:', e);
     } finally {
       setIsPopulatingSample(false);
     }
@@ -522,7 +523,7 @@ export const Header: React.FC = () => {
           onClick={handleLoadSamplePipeline}
           disabled={isPopulatingSample || !projectId || appMode === 'attack'}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 hover:text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/30 rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
-          title={appMode === 'attack' ? 'Load Sample disabled in Attack Mode' : 'Load ChainDrop npm worm example'}
+          title={appMode === 'attack' ? 'Load Sample disabled in Attack Mode' : 'Load pipeline attack demo'}
         >
           {isPopulatingSample ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
