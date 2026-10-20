@@ -38,6 +38,8 @@
           # Tools
           llm-agents.codex
           llm-agents.freebuff
+          bubblewrap
+          texliveSmall
         ];
       };
     };
